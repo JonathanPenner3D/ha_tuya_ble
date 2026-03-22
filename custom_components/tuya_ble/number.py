@@ -710,7 +710,7 @@ mapping: dict[str, TuyaBLECategoryNumberMapping] = {
     "cl": TuyaBLECategoryNumberMapping(
         products={
             **dict.fromkeys(
-                ["4pbr8eig", "qqdxfdht", "kcy0x4pi", "vlwf3ud6"],
+                ["4pbr8eig", "qqdxfdht", "kcy0x4pi", "vlwf3ud6", "mnet9kgf"],
                 [
                     TuyaBLENumberMapping(
                         dp_id=105,
