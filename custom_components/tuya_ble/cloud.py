@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from dataclasses import dataclass
@@ -136,13 +137,22 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
         )
         api.set_dev_channel("hass")
 
-        response = await self._hass.async_add_executor_job(
-            api.connect,
-            data.get(CONF_USERNAME, ""),
-            data.get(CONF_PASSWORD, ""),
-            data.get(CONF_COUNTRY_CODE, ""),
-            data.get(CONF_APP_TYPE, ""),
-        )
+        try:
+            response = await asyncio.wait_for(
+                self._hass.async_add_executor_job(
+                    api.connect,
+                    data.get(CONF_USERNAME, ""),
+                    data.get(CONF_PASSWORD, ""),
+                    data.get(CONF_COUNTRY_CODE, ""),
+                    data.get(CONF_APP_TYPE, ""),
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "Tuya cloud login timed out for %s", data.get(CONF_USERNAME, "unknown")
+            )
+            return {}
 
         if self._is_login_success(response):
             _LOGGER.debug("Successful login for %s", data[CONF_USERNAME])
@@ -200,22 +210,6 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                                 CONF_PRODUCT_MODEL: device.get("model"),
                                 CONF_PRODUCT_NAME: device.get("product_name"),
                             }
-
-                            spec_response = await self._hass.async_add_executor_job(
-                                item.api.get,
-                                TUYA_API_DEVICE_SPECIFICATION % device.get("id"),
-                            )
-
-                            spec_response_result = spec_response.get(
-                                TUYA_RESPONSE_RESULT
-                            )
-                            if spec_response_result:
-                                functions = spec_response_result.get("functions")
-                                if functions:
-                                    item.credentials[mac][CONF_FUNCTIONS] = functions
-                                status = spec_response_result.get("status")
-                                if status:
-                                    item.credentials[mac][CONF_STATUS_RANGE] = status
 
                             spec_response = await self._hass.async_add_executor_job(
                                 item.api.get,

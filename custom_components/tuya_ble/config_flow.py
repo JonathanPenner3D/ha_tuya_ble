@@ -208,7 +208,7 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
 class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Tuya BLE."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""

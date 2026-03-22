@@ -690,10 +690,13 @@ def get_device_info(device: TuyaBLEDevice) -> DeviceInfo | None:
         product_name = product_info.name
     else:
         product_name = device.name
+    identifiers: set[tuple[str, str]] = {(DOMAIN, device.address)}
+    if device.device_id:
+        identifiers.add((DOMAIN, device.device_id))
     result = DeviceInfo(
         connections={(dr.CONNECTION_BLUETOOTH, device.address)},
         hw_version=device.hardware_version,
-        identifiers={(DOMAIN, device.address)},
+        identifiers=identifiers,
         manufacturer=(
             product_info.manufacturer if product_info else DEVICE_DEF_MANUFACTURER
         ),
