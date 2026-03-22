@@ -266,7 +266,7 @@ class TuyaBLEClimate(TuyaBLEEntity, ClimateEntity):
                 int_value,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(int_value))
+                await datapoint.set_value(int_value)
 
     async def async_set_humidity(self, humidity: int) -> None:
         """Set new target humidity."""
@@ -278,7 +278,7 @@ class TuyaBLEClimate(TuyaBLEEntity, ClimateEntity):
                 int_value,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(int_value))
+                await datapoint.set_value(int_value)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -294,7 +294,7 @@ class TuyaBLEClimate(TuyaBLEEntity, ClimateEntity):
                 int_value,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(int_value))
+                await datapoint.set_value(int_value)
         elif self._mapping.hvac_switch_dp_id != 0 and self._mapping.hvac_switch_mode:
             bool_value = hvac_mode == self._mapping.hvac_switch_mode
             datapoint = self._device.datapoints.get_or_create(
@@ -303,7 +303,7 @@ class TuyaBLEClimate(TuyaBLEEntity, ClimateEntity):
                 bool_value,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(bool_value))
+                await datapoint.set_value(bool_value)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
@@ -338,7 +338,7 @@ class TuyaBLEClimate(TuyaBLEEntity, ClimateEntity):
                             bool_value,
                         )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(bool_value))
+                await datapoint.set_value(bool_value)
 
 
 async def async_setup_entry(

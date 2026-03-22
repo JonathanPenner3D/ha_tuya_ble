@@ -21,6 +21,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from bleak_retry_connector import BLEAK_RETRY_EXCEPTIONS as BLEAK_EXCEPTIONS
+
 from .const import DOMAIN
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
@@ -228,7 +230,7 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 10,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(10))
+                await datapoint.set_value(10)
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         """Close the cover tilt."""
@@ -239,7 +241,7 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 1,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(1))
+                await datapoint.set_value(1)
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Move the cover tilt to a specific position."""
@@ -252,7 +254,7 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 new_tilt_position,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(new_tilt_position))
+                await datapoint.set_value(new_tilt_position)
 
     async def async_open_cover(self, **kwargs) -> None:
         """Open a cover."""
@@ -273,15 +275,17 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
             # This is why a timer is here to verify that the state is updated and to manually request the status update
             # if no new data has come in within 1 second as it points to a communication error (as happened in tests with
             # the kcy0x4pi product).
-            self._hass.add_job(
+            self._hass.async_create_task(
                 self._validate_data_update_from_device_and_reconnect_if_needed(
                     time_now=datetime.now(timezone.utc)
                 )
             )
-            self._update_cover_state_without_validation(state)
+            await self._update_cover_state_without_validation(state)
             self._update_ha_state_for_cover_state(state)
 
-    def _update_cover_state_without_validation(self, state: TuyaCoverState) -> None:
+    async def _update_cover_state_without_validation(
+        self, state: TuyaCoverState
+    ) -> None:
         if self._mapping.cover_state_dp_id != 0:
             datapoint = self._device.datapoints.get_or_create(
                 self._mapping.cover_state_dp_id,
@@ -289,7 +293,7 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 state.value,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(state.value))
+                await datapoint.set_value(state.value)
 
     async def _validate_data_update_from_device_and_reconnect_if_needed(
         self,
@@ -307,7 +311,14 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 self._device.name,
                 sleep_ms,
             )
-            await self._device.update()
+            try:
+                await self._device.update()
+            except BLEAK_EXCEPTIONS as ex:
+                _LOGGER.debug(
+                    "%s: BLE communication failed during status poll: %s",
+                    self._device.address,
+                    ex,
+                )
 
     def _update_ha_state_for_cover_state(self, state: TuyaCoverState) -> None:
         # sometimes the device does not update DP 1 so force the current state
@@ -334,7 +345,7 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
                 position,
             )
             if datapoint:
-                self._hass.create_task(datapoint.set_value(position))
+                await datapoint.set_value(position)
 
 
 async def async_setup_entry(

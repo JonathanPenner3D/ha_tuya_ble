@@ -240,7 +240,7 @@ class TuyaBLEButton(TuyaBLEEntity, ButtonEntity):
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
 
-    def press(self) -> None:
+    async def async_press(self) -> None:
         """Press the button."""
         datapoint = self._device.datapoints.get_or_create(
             self._mapping.dp_id,
@@ -250,9 +250,9 @@ class TuyaBLEButton(TuyaBLEEntity, ButtonEntity):
         if datapoint:
             if self._product.lock:
                 # Lock needs true to activate lock/unlock commands
-                self._hass.create_task(datapoint.set_value(True))
+                await datapoint.set_value(True)
             else:
-                self._hass.create_task(datapoint.set_value(not bool(datapoint.value)))
+                await datapoint.set_value(not bool(datapoint.value))
 
     @property
     def available(self) -> bool:

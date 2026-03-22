@@ -1069,7 +1069,13 @@ class TuyaBLEDevice:
     async def _resend_packets(self, packets: list[bytes]) -> None:
         if self._expected_disconnect:
             return
-        await self._ensure_connected()
+        try:
+            await self._ensure_connected()
+        except BLEAK_EXCEPTIONS:
+            _LOGGER.debug(
+                "%s: Resend failed, could not reconnect", self.address, exc_info=True
+            )
+            return
         if self._expected_disconnect:
             return
         await self._int_send_packet_while_connected(packets)

@@ -234,7 +234,7 @@ class TuyaBLEText(TuyaBLEEntity, TextEntity):
 
         return self._mapping.default_value
 
-    def set_value(self, value: str) -> None:
+    async def async_set_value(self, value: str) -> None:
         """Change the value."""
         if self._mapping.setter:
             self._mapping.setter(self, self._product, value)
@@ -245,7 +245,7 @@ class TuyaBLEText(TuyaBLEEntity, TextEntity):
             value,
         )
         if datapoint:
-            self._hass.create_task(datapoint.set_value(value))
+            await datapoint.set_value(value)
 
 
 async def async_setup_entry(
