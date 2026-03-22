@@ -12,7 +12,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import (
     DeviceInfo,
     EntityDescription,
-    generate_entity_id,
 )
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
@@ -111,9 +110,6 @@ class TuyaBLEEntity(CoordinatorEntity):
         self._attr_has_entity_name = True
         self._attr_device_info = get_device_info(self._device)
         self._attr_unique_id = f"{self._device.device_id}-{description.key}"
-        self.entity_id = generate_entity_id(
-            "sensor.{}", self._attr_unique_id, hass=hass
-        )
 
     @property
     def available(self) -> bool:
@@ -694,10 +690,13 @@ def get_device_info(device: TuyaBLEDevice) -> DeviceInfo | None:
         product_name = product_info.name
     else:
         product_name = device.name
+    identifiers: set[tuple[str, str]] = {(DOMAIN, device.address)}
+    if device.device_id:
+        identifiers.add((DOMAIN, device.device_id))
     result = DeviceInfo(
         connections={(dr.CONNECTION_BLUETOOTH, device.address)},
         hw_version=device.hardware_version,
-        identifiers={(DOMAIN, device.address)},
+        identifiers=identifiers,
         manufacturer=(
             product_info.manufacturer if product_info else DEVICE_DEF_MANUFACTURER
         ),

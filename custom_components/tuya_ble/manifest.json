@@ -1,6 +1,7 @@
 {
   "domain": "tuya_ble",
   "name": "Tuya BLE",
+  "quality_scale": "bronze",
   "bluetooth": [
     {
       "connectable": true,

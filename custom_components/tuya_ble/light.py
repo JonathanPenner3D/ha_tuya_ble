@@ -543,7 +543,6 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
     ) -> None:
         super().__init__(hass, coordinator, device, product, description)
 
-        self._attr_unique_id = f"{super().unique_id}{description.key}"
         self._attr_supported_color_modes: set[ColorMode] = set()
 
         # Update/override the device info from our description

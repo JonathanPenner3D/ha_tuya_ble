@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 
 from .tuya_ble import TuyaBLEDevice
 
@@ -36,6 +37,42 @@ PLATFORMS: list[Platform] = [
 _LOGGER = logging.getLogger(__name__)
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entry to new version."""
+    _LOGGER.debug("Migrating config entry from version %s", entry.version)
+
+    if entry.version == 1:
+        # Version 1 → 2: Remove stale entities created by the
+        # generate_entity_id("sensor.{}") bug. All non-sensor entities
+        # (switch, lock, light, climate, etc.) were registered under a
+        # sensor.* entity ID. Remove them so the correct platform domains
+        # take over when the entry is set up with the fixed code.
+        entity_registry = er.async_get(hass)
+        stale_entities = [
+            entity_entry
+            for entity_entry in er.async_entries_for_config_entry(
+                entity_registry, entry.entry_id
+            )
+            if entity_entry.entity_id.startswith("sensor.")
+            and entity_entry.platform == DOMAIN
+        ]
+        for entity_entry in stale_entities:
+            _LOGGER.info(
+                "Removing stale entity %s (incorrect sensor. domain from entity ID bug)",
+                entity_entry.entity_id,
+            )
+            entity_registry.async_remove(entity_entry.entity_id)
+
+        hass.config_entries.async_update_entry(entry, version=2)
+        _LOGGER.info(
+            "Migrated config entry %s to version 2 (%d stale entities removed)",
+            entry.entry_id,
+            len(stale_entities),
+        )
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tuya BLE from a config entry."""
     address: str = entry.data[CONF_ADDRESS]
@@ -53,15 +90,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = TuyaBLECoordinator(hass, device)
 
-    """
     try:
         await device.update()
     except BLEAK_EXCEPTIONS as ex:
         raise ConfigEntryNotReady(
             f"Could not communicate with Tuya BLE device with address {address}"
         ) from ex
-    """
-    hass.add_job(device.update())
 
     @callback
     def _async_update_ble(
