@@ -11,7 +11,7 @@ from homeassistant.components.bluetooth.match import ADDRESS, BluetoothCallbackM
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
 from .tuya_ble import TuyaBLEDevice
@@ -85,7 +85,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     manager = HASSTuyaBLEDeviceManager(hass, entry.options.copy())
     device = TuyaBLEDevice(manager, ble_device)
-    await device.initialize()
+    try:
+        await device.initialize()
+    except BLEAK_EXCEPTIONS as ex:
+        raise ConfigEntryNotReady(
+            f"Could not initialize Tuya BLE device with address {address}"
+        ) from ex
+    except Exception as ex:
+        raise ConfigEntryNotReady(
+            f"Unexpected error initializing Tuya BLE device with address {address}"
+        ) from ex
+
+    if not device.device_id:
+        if manager.cloud_auth_failed:
+            raise ConfigEntryAuthFailed(
+                f"Tuya cloud authentication failed for device {address}"
+            )
+        if HASSTuyaBLEDeviceManager._has_login(entry.options):
+            raise ConfigEntryNotReady(
+                f"Could not retrieve credentials for Tuya BLE device with address {address}; "
+                "cloud may be temporarily unreachable"
+            )
+
     product_info = get_device_product_info(device)
 
     coordinator = TuyaBLECoordinator(hass, device)

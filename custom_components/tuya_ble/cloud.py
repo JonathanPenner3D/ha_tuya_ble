@@ -98,6 +98,12 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
         assert hass is not None
         self._hass = hass
         self._data = data
+        self._cloud_auth_failed = False
+
+    @property
+    def cloud_auth_failed(self) -> bool:
+        """True if cloud login returned an explicit authentication failure (not a timeout)."""
+        return self._cloud_auth_failed
 
     @staticmethod
     def _is_login_success(response: dict[Any, Any]) -> bool:
@@ -149,7 +155,7 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Tuya cloud login timed out for %s", data.get(CONF_USERNAME, "unknown")
             )
             return {}
@@ -167,6 +173,13 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                     cache_item.login = data
                 else:
                     _cache[cache_key] = TuyaCloudCacheItem(api, data, {})
+        else:
+            self._cloud_auth_failed = True
+            _LOGGER.debug(
+                "Tuya cloud login failed for %s: %s",
+                data.get(CONF_USERNAME, "unknown"),
+                response.get("msg", "unknown error"),
+            )
 
         return response
 
