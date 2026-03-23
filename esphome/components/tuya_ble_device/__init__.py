@@ -31,11 +31,6 @@ CONFIG_SCHEMA = (
 
 
 async def to_code(config):
-    cg.add_build_flag('-DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h"')
-    cg.add_platformio_option(
-        "build_flags", ['-DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h"']
-    )
-
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await ble_client.register_ble_node(var, config)
