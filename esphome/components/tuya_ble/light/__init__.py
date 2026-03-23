@@ -6,7 +6,7 @@ from esphome.const import CONF_ID, CONF_OUTPUT_ID
 DEPENDENCIES = ["tuya_ble_device"]
 CODEOWNERS = ["@JonathanPenner3D"]
 
-CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID = "tuya_ble_device_id"
 CONF_SWITCH_DP = "switch_dp"
 CONF_BRIGHTNESS_DP = "brightness_dp"
 CONF_BRIGHTNESS_MAX = "brightness_max"

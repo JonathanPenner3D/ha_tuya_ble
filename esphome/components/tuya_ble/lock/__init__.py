@@ -6,7 +6,7 @@ from esphome.const import CONF_ID
 DEPENDENCIES = ["tuya_ble_device"]
 CODEOWNERS = ["@JonathanPenner3D"]
 
-CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID = "tuya_ble_device_id"
 CONF_LOCK_STATE_DP = "lock_state_dp"
 CONF_LOCK_CONTROL_DP = "lock_control_dp"
 CONF_INVERT_STATE = "invert_state"
