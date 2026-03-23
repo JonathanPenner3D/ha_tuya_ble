@@ -57,18 +57,15 @@ tuya_ble_device:
 # ============================================================
 # Cover (e.g., Tuya BLE Blind/Curtain Controller)
 # ============================================================
-# Common DP assignments for Tuya cover devices (category "cl"):
+# Standard Tuya cover (category "cl") DP codes are used by default:
 #   state_dp: 1       (0=Open, 1=Stop, 2=Close)
 #   position_set_dp: 2 (0-100, inverted: 100=closed, 0=open)
 #   position_dp: 3     (current position, same inverted scale)
-#   tilt_dp: 101        (1-10 range for venetian blinds)
+# You only need to specify DPs if your device uses non-standard values.
 cover:
   - platform: tuya_ble
     device_id: cover_controller
     name: "Bedroom Blinds"
-    state_dp: 1
-    position_dp: 3
-    position_set_dp: 2
     # tilt_dp: 101  # Uncomment for venetian blind tilt support
 
 # ============================================================
