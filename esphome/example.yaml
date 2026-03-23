@@ -138,3 +138,55 @@ text:
       - dp: 106
         name: "Device PIN"
         mode: text
+
+# ============================================================
+# Light (e.g., Tuya BLE RGB Strip / LED Light)
+# ============================================================
+# See DP_REFERENCE.md for device-specific DP numbers.
+# brightness_max: the device's brightness scale (1000 for v2, 255 for v1)
+# color_temp_min/max_mireds: the light's color temperature range
+#
+# light:
+#   - platform: tuya_ble
+#     device_id: my_light
+#     name: "LED Strip"
+#     switch_dp: 20          # On/off
+#     brightness_dp: 22      # Brightness (0-1000)
+#     brightness_max: 1000
+#     color_temp_dp: 23      # Color temperature
+#     color_dp: 24            # HSV color data (12-char hex string)
+#     work_mode_dp: 21        # "white" or "colour"
+
+# ============================================================
+# Climate (e.g., Thermostatic Radiator Valve)
+# ============================================================
+# Supports OFF and HEAT modes via a switch DP.
+# temperature_coefficient divides the raw DP value to get °C
+# (e.g., coefficient 10 means raw 215 = 21.5°C).
+#
+# climate:
+#   - platform: tuya_ble
+#     device_id: my_trv
+#     name: "Radiator Valve"
+#     switch_dp: 101
+#     current_temperature_dp: 102
+#     target_temperature_dp: 103
+#     temperature_coefficient: 10.0
+#     temperature_step: 0.5
+#     temperature_min: 5.0
+#     temperature_max: 30.0
+
+# ============================================================
+# Lock (e.g., Tuya BLE Smart Lock)
+# ============================================================
+# lock_state_dp: reads lock state (motor state DP, typically inverted)
+# lock_control_dp: sends lock/unlock commands (manual_lock DP)
+# invert_state: true (default) inverts motor state → locked when motor off
+#
+# lock:
+#   - platform: tuya_ble
+#     device_id: my_lock
+#     name: "Front Door"
+#     lock_state_dp: 47
+#     lock_control_dp: 46
+#     invert_state: true

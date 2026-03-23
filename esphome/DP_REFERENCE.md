@@ -408,6 +408,26 @@ Products: `ludzroix`, `isk2p555`, `gumrixyt`, `uamrw6h3`, `sidhzylo`, `okkyfgfs`
 | 46 | Manual Lock | bool | switch | Some models only |
 | 47 | Lock Motor State | bool | switch / binary_sensor | |
 
+### ESPHome Lock Config
+
+```yaml
+lock:
+  - platform: tuya_ble
+    device_id: my_lock
+    name: "Front Door"
+    lock_state_dp: 47      # Motor state (inverted: locked when false)
+    lock_control_dp: 46    # Manual lock control
+
+sensor:
+  - platform: tuya_ble
+    device_id: my_lock
+    sensors:
+      - dp: 8
+        name: "Lock Battery"
+        unit_of_measurement: "%"
+        device_class: battery
+```
+
 Additional DPs on `mqc2hevy` (YSG_T8_8G_htr):
 
 | DP | Name | Type | Platform | Values / Notes |
@@ -560,6 +580,54 @@ Products: `z5ztlw3k` (4Ah), `ajrhf1aj` (8Ah)
 
 ---
 
+## RGB Strip / LED Light (category `dd`)
+
+Known products: `nvfrtxlq` (LGB102 Magic Strip), `umzu0c2y` (Floor Lamp),
+`6jxcdae1` (Sunset Lamp), `0qgrjxum` (RGB Strip Light)
+
+Light DPs vary by device. The HA integration uses DPCode names rather than
+fixed numeric IDs. Check your device's DPs on the Tuya IoT Platform and look
+for these function codes:
+
+| DPCode | Function | Typical DP | Type |
+|--------|----------|------------|------|
+| switch_led | On/Off | 20 | bool |
+| work_mode | Mode (white/colour/scene) | 21 | enum/string |
+| bright_value / bright_value_v2 | Brightness | 22 | int (0-255 or 0-1000) |
+| temp_value / temp_value_v2 | Color temperature | 23 | int |
+| colour_data / colour_data_v2 | HSV color (hex string) | 24 | string |
+
+### ESPHome Light Config
+
+```yaml
+light:
+  - platform: tuya_ble
+    device_id: my_light
+    name: "LED Strip"
+    switch_dp: 20
+    brightness_dp: 22
+    brightness_max: 1000       # 1000 for v2 devices, 255 for v1
+    color_temp_dp: 23
+    color_temp_min_mireds: 153 # ~6500K (cool white)
+    color_temp_max_mireds: 500 # ~2000K (warm white)
+    color_dp: 24               # HSV data as 12-char hex string
+    work_mode_dp: 21           # "white" or "colour"
+```
+
+For a brightness-only light (no color/color temp):
+
+```yaml
+light:
+  - platform: tuya_ble
+    device_id: my_dimmer
+    name: "Dimmer"
+    switch_dp: 20
+    brightness_dp: 22
+    brightness_max: 1000
+```
+
+---
+
 ## How to Find Your Device's DPs
 
 If your device isn't listed above:
@@ -573,3 +641,7 @@ If your device isn't listed above:
    - Numeric DPs → `sensor` (read-only) or `number` (writable)
    - Enum DPs → `sensor` (read-only) or `select` (writable)
    - String DPs → `text`
+   - Cover DPs → `cover` (state, position, tilt)
+   - Light DPs → `light` (switch, brightness, color temp, color)
+   - Climate DPs → `climate` (switch, current temp, target temp)
+   - Lock DPs → `lock` (motor state, manual lock)
