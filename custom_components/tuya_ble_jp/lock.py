@@ -53,9 +53,9 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
             product,
             LockEntityDescription(key="lock", name=product.name),
         )
-        self.entity_id = generate_entity_id(
-            "lock.{}", self._attr_unique_id, hass=hass
-        )
+        # self.entity_id = generate_entity_id(
+        #     "lock.{}", self._attr_unique_id, hass=hass
+        # )
         self._attr_supported_features = LockEntityFeature.OPEN
 
     @property

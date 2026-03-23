@@ -163,9 +163,9 @@ class TuyaBLECover(TuyaBLEEntity, CoverEntity):
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
-        self.entity_id = generate_entity_id(
-            "cover.", self._attr_unique_id, hass=hass
-        )
+        # self.entity_id = generate_entity_id(
+        #     "cover.", self._attr_unique_id, hass=hass
+        # )
 
     @property
     def supported_features(self) -> CoverEntityFeature:
