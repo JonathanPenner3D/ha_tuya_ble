@@ -32,6 +32,11 @@ CONFIG_SCHEMA = (
 
 async def to_code(config):
     esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_MD5_C", True)
+    try:
+        from esphome.components.esp32 import include_builtin_idf_component
+        include_builtin_idf_component("mbedtls")
+    except ImportError:
+        pass  # ESPHome < 2026.2.0 includes all IDF components by default
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
