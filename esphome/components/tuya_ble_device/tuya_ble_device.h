@@ -2,7 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/components/ble_client/ble_client.h"
-#include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
+#include "esphome/components/esp32_ble/ble_uuid.h"
 #include "esphome/core/log.h"
 
 #include <mbedtls/aes.h>
@@ -16,15 +16,15 @@
 namespace esphome {
 namespace tuya_ble_device {
 
-// GATT characteristics
-static const espbt::ESPBTUUID SERVICE_UUID =
-    espbt::ESPBTUUID::from_raw("0000fd50-0000-1000-8000-00805f9b34fb");
-static const espbt::ESPBTUUID CHAR_NOTIFY =
-    espbt::ESPBTUUID::from_raw("00002b10-0000-1000-8000-00805f9b34fb");
-static const espbt::ESPBTUUID CHAR_WRITE =
-    espbt::ESPBTUUID::from_raw("00002b11-0000-1000-8000-00805f9b34fb");
-
 static const uint8_t GATT_MTU = 20;
+
+// GATT characteristics — using esp32_ble::ESPBTUUID
+static const esp32_ble::ESPBTUUID SERVICE_UUID =
+    esp32_ble::ESPBTUUID::from_raw("0000fd50-0000-1000-8000-00805f9b34fb");
+static const esp32_ble::ESPBTUUID CHAR_NOTIFY =
+    esp32_ble::ESPBTUUID::from_raw("00002b10-0000-1000-8000-00805f9b34fb");
+static const esp32_ble::ESPBTUUID CHAR_WRITE =
+    esp32_ble::ESPBTUUID::from_raw("00002b11-0000-1000-8000-00805f9b34fb");
 
 // Command codes
 enum TuyaBLECode : uint16_t {
