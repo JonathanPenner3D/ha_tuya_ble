@@ -1,0 +1,192 @@
+# Example ESPHome configuration for Tuya BLE devices
+#
+# This component communicates with Tuya BLE devices directly via an ESP32,
+# without requiring the Tuya cloud. You need the device's MAC address and
+# credentials (local_key, uuid, device_id) which can be obtained from Tuya
+# IoT Platform or extracted from the Tuya/SmartLife app.
+
+esphome:
+  name: tuya-ble-gateway
+  platform: ESP32
+  board: esp32dev
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+ota:
+  platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Enable BLE tracking (required for BLE client)
+esp32_ble_tracker:
+
+# BLE client connection to the Tuya device
+ble_client:
+  - mac_address: "XX:XX:XX:XX:XX:XX"
+    id: my_ble_client
+
+# Load the custom components from the local directory
+external_components:
+  - source:
+      type: local
+      path: components
+
+# ============================================================
+# Tuya BLE Device Hub
+# ============================================================
+# This is the core device that handles BLE communication,
+# encryption, and the Tuya protocol.
+#
+# Required credentials from Tuya IoT Platform:
+#   local_key: The device's local encryption key
+#   uuid:      The device's UUID
+#   device_id: The device's ID
+tuya_ble_device:
+  - id: cover_controller
+    ble_client_id: my_ble_client
+    local_key: "your_local_key_here"
+    uuid: "your_uuid_here"
+    device_id: "your_device_id_here"
+
+# ============================================================
+# Cover (e.g., Tuya BLE Blind/Curtain Controller)
+# ============================================================
+# Standard Tuya cover (category "cl") DP codes are used by default:
+#   state_dp: 1       (0=Open, 1=Stop, 2=Close)
+#   position_set_dp: 2 (0-100, inverted: 100=closed, 0=open)
+#   position_dp: 3     (current position, same inverted scale)
+# You only need to specify DPs if your device uses non-standard values.
+cover:
+  - platform: tuya_ble
+    device_id: cover_controller
+    name: "Bedroom Blinds"
+    # tilt_dp: 101  # Uncomment for venetian blind tilt support
+
+# ============================================================
+# Sensors
+# ============================================================
+# Map numeric/enum Tuya datapoints to HA sensors.
+# The coefficient divides the raw value (e.g., coefficient: 10
+# means raw value 235 becomes 23.5).
+sensor:
+  - platform: tuya_ble
+    device_id: cover_controller
+    sensors:
+      - dp: 13
+        name: "Battery Level"
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+
+      # Example: temperature sensor with coefficient
+      # - dp: 18
+      #   name: "Temperature"
+      #   unit_of_measurement: "°C"
+      #   device_class: temperature
+      #   coefficient: 10.0  # Raw value divided by 10
+
+# ============================================================
+# Binary Sensors
+# ============================================================
+# Map boolean Tuya datapoints to HA binary sensors.
+binary_sensor:
+  - platform: tuya_ble
+    device_id: cover_controller
+    binary_sensors:
+      - dp: 105
+        name: "Battery Low"
+        device_class: battery
+
+# ============================================================
+# Numbers
+# ============================================================
+# Map numeric Tuya datapoints to controllable HA number entities.
+number:
+  - platform: tuya_ble
+    device_id: cover_controller
+    numbers:
+      - dp: 105
+        name: "Motor Speed"
+        min_value: 0
+        max_value: 100
+        step: 1
+        unit_of_measurement: "%"
+
+      # Example with coefficient (raw 0-100 maps to 0.0-10.0)
+      # - dp: 3
+      #   name: "Hold Time"
+      #   min_value: 0
+      #   max_value: 10
+      #   step: 0.1
+      #   coefficient: 10.0
+      #   unit_of_measurement: "s"
+
+# ============================================================
+# Text
+# ============================================================
+# Map string Tuya datapoints to HA text entities.
+text:
+  - platform: tuya_ble
+    device_id: cover_controller
+    texts:
+      - dp: 106
+        name: "Device PIN"
+        mode: text
+
+# ============================================================
+# Light (e.g., Tuya BLE RGB Strip / LED Light)
+# ============================================================
+# See DP_REFERENCE.md for device-specific DP numbers.
+# brightness_max: the device's brightness scale (1000 for v2, 255 for v1)
+# color_temp_min/max_mireds: the light's color temperature range
+#
+# light:
+#   - platform: tuya_ble
+#     device_id: my_light
+#     name: "LED Strip"
+#     switch_dp: 20          # On/off
+#     brightness_dp: 22      # Brightness (0-1000)
+#     brightness_max: 1000
+#     color_temp_dp: 23      # Color temperature
+#     color_dp: 24            # HSV color data (12-char hex string)
+#     work_mode_dp: 21        # "white" or "colour"
+
+# ============================================================
+# Climate (e.g., Thermostatic Radiator Valve)
+# ============================================================
+# Supports OFF and HEAT modes via a switch DP.
+# temperature_coefficient divides the raw DP value to get °C
+# (e.g., coefficient 10 means raw 215 = 21.5°C).
+#
+# climate:
+#   - platform: tuya_ble
+#     device_id: my_trv
+#     name: "Radiator Valve"
+#     switch_dp: 101
+#     current_temperature_dp: 102
+#     target_temperature_dp: 103
+#     temperature_coefficient: 10.0
+#     temperature_step: 0.5
+#     temperature_min: 5.0
+#     temperature_max: 30.0
+
+# ============================================================
+# Lock (e.g., Tuya BLE Smart Lock)
+# ============================================================
+# lock_state_dp: reads lock state (motor state DP, typically inverted)
+# lock_control_dp: sends lock/unlock commands (manual_lock DP)
+# invert_state: true (default) inverts motor state → locked when motor off
+#
+# lock:
+#   - platform: tuya_ble
+#     device_id: my_lock
+#     name: "Front Door"
+#     lock_state_dp: 47
+#     lock_control_dp: 46
+#     invert_state: true
