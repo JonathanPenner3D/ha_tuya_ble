@@ -155,6 +155,9 @@ class TuyaBLEBinarySensor(TuyaBLEEntity, BinarySensorEntity):
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
+        self.entity_id = generate_entity_id(
+            "binary_sensor.{}", self._attr_unique_id, hass=hass
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

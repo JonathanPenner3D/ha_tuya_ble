@@ -239,6 +239,9 @@ class TuyaBLEButton(TuyaBLEEntity, ButtonEntity):
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
+        self.entity_id = generate_entity_id(
+            "button.{}", self._attr_unique_id, hass=hass
+        )
 
     def press(self) -> None:
         """Press the button."""

@@ -1130,6 +1130,9 @@ class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
         mapping: TuyaBLESensorMapping,
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
+        self.entity_id = generate_entity_id(
+            "sensor.{}", self._attr_unique_id, hass=hass
+        )
         self._mapping = mapping
 
     @callback

@@ -754,6 +754,9 @@ class TuyaBLENumber(TuyaBLEEntity, NumberEntity):
         mapping: TuyaBLENumberMapping,
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
+        self.entity_id = generate_entity_id(
+            "number.{}", self._attr_unique_id, hass=hass
+        )
         self._mapping = mapping
         self._attr_mode = mapping.mode
 

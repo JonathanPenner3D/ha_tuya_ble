@@ -545,6 +545,9 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
 
         self._attr_unique_id = f"{super().unique_id}{description.key}"
         self._attr_supported_color_modes: set[ColorMode] = set()
+        self.entity_id = generate_entity_id(
+            "light.{}", self._attr_unique_id, hass=hass
+        )
 
         # Update/override the device info from our description
         device.update_description(description)
