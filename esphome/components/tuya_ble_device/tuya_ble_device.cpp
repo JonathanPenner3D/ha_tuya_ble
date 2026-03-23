@@ -57,9 +57,9 @@ void TuyaBLEDevice::derive_keys_() {
 void TuyaBLEDevice::compute_md5_(const uint8_t *input, size_t len, uint8_t *output) {
   mbedtls_md5_context ctx;
   mbedtls_md5_init(&ctx);
-  mbedtls_md5_starts_ret(&ctx);
-  mbedtls_md5_update_ret(&ctx, input, len);
-  mbedtls_md5_finish_ret(&ctx, output);
+  mbedtls_md5_starts(&ctx);
+  mbedtls_md5_update(&ctx, input, len);
+  mbedtls_md5_finish(&ctx, output);
   mbedtls_md5_free(&ctx);
 }
 
@@ -695,6 +695,25 @@ size_t TuyaBLEDevice::parse_timestamp_(const uint8_t *data, size_t len, size_t s
   return pos;
 }
 
+static int16_t get_tz_offset_() {
+  // Compute UTC offset by comparing localtime and gmtime
+  time_t now;
+  time(&now);
+  struct tm local_tm, gm_tm;
+  localtime_r(&now, &local_tm);
+  gmtime_r(&now, &gm_tm);
+  // Difference in seconds
+  int32_t diff = (local_tm.tm_hour - gm_tm.tm_hour) * 3600 +
+                 (local_tm.tm_min - gm_tm.tm_min) * 60 +
+                 (local_tm.tm_sec - gm_tm.tm_sec);
+  // Handle day boundary
+  int day_diff = local_tm.tm_mday - gm_tm.tm_mday;
+  if (day_diff > 1) day_diff = -1;   // Month boundary: local is 1st, gm is 28-31st
+  if (day_diff < -1) day_diff = 1;   // Month boundary: local is 28-31st, gm is 1st
+  diff += day_diff * 86400;
+  return (int16_t)(diff / 36);
+}
+
 void TuyaBLEDevice::send_time1_response_(uint32_t seq_num) {
   // Millisecond timestamp as string + timezone
   time_t now;
@@ -703,11 +722,7 @@ void TuyaBLEDevice::send_time1_response_(uint32_t seq_num) {
   char buf[14];
   snprintf(buf, sizeof(buf), "%013llu", (unsigned long long) ms);
 
-  // Timezone offset: -timezone/36 as signed short (matches Python: -int(time.timezone / 36))
-  // On ESP32, use gmtoff from localtime
-  struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
-  int16_t tz_offset = (int16_t)(timeinfo.tm_gmtoff / 36);
+  int16_t tz_offset = get_tz_offset_();
 
   std::vector<uint8_t> resp;
   for (int i = 0; i < 13; i++)
@@ -724,7 +739,7 @@ void TuyaBLEDevice::send_time2_response_(uint32_t seq_num) {
   struct tm timeinfo;
   localtime_r(&now, &timeinfo);
 
-  int16_t tz_offset = (int16_t)(timeinfo.tm_gmtoff / 36);
+  int16_t tz_offset = get_tz_offset_();
 
   std::vector<uint8_t> resp(9);
   resp[0] = timeinfo.tm_year % 100;  // Year (2-digit)
