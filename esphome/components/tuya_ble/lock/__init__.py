@@ -15,9 +15,9 @@ tuya_ble_lock_ns = cg.esphome_ns.namespace("tuya_ble_lock")
 TuyaBLELock = tuya_ble_lock_ns.class_("TuyaBLELock", lock.Lock, cg.Component)
 
 CONFIG_SCHEMA = (
-    lock.LOCK_SCHEMA.extend(
+    lock.lock_schema(TuyaBLELock)
+    .extend(
         {
-            cv.GenerateID(): cv.declare_id(TuyaBLELock),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Required(CONF_LOCK_STATE_DP): cv.uint8_t,
             cv.Required(CONF_LOCK_CONTROL_DP): cv.uint8_t,

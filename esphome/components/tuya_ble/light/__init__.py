@@ -22,9 +22,9 @@ TuyaBLELight = tuya_ble_light_ns.class_(
 )
 
 CONFIG_SCHEMA = (
-    light.LIGHT_SCHEMA.extend(
+    light.light_schema(TuyaBLELight)
+    .extend(
         {
-            cv.GenerateID(CONF_OUTPUT_ID): cv.declare_id(TuyaBLELight),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Required(CONF_SWITCH_DP): cv.uint8_t,
             cv.Optional(CONF_BRIGHTNESS_DP): cv.uint8_t,

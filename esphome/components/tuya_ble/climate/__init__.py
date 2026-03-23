@@ -21,9 +21,9 @@ TuyaBLEClimate = tuya_ble_climate_ns.class_(
 )
 
 CONFIG_SCHEMA = (
-    climate.CLIMATE_SCHEMA.extend(
+    climate.climate_schema(TuyaBLEClimate)
+    .extend(
         {
-            cv.GenerateID(): cv.declare_id(TuyaBLEClimate),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Required(CONF_SWITCH_DP): cv.uint8_t,
             cv.Required(CONF_CURRENT_TEMP_DP): cv.uint8_t,
