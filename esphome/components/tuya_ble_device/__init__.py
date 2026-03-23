@@ -35,8 +35,11 @@ async def to_code(config):
     try:
         from esphome.components.esp32 import include_builtin_idf_component
         include_builtin_idf_component("mbedtls")
-    except ImportError:
-        pass  # ESPHome < 2026.2.0 includes all IDF components by default
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import include_builtin_idf_component from esphome.components.esp32: {e}. "
+            "tuya_ble_device requires mbedtls from ESP-IDF."
+        ) from e
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
