@@ -6,7 +6,7 @@ from esphome.const import CONF_ID, CONF_OUTPUT_ID
 DEPENDENCIES = ["tuya_ble_device"]
 CODEOWNERS = ["@JonathanPenner3D"]
 
-CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID = "tuya_ble_device_id"
 CONF_SWITCH_DP = "switch_dp"
 CONF_BRIGHTNESS_DP = "brightness_dp"
 CONF_BRIGHTNESS_MAX = "brightness_max"
@@ -22,9 +22,9 @@ TuyaBLELight = tuya_ble_light_ns.class_(
 )
 
 CONFIG_SCHEMA = (
-    light.LIGHT_SCHEMA.extend(
+    light.light_schema(TuyaBLELight)
+    .extend(
         {
-            cv.GenerateID(CONF_OUTPUT_ID): cv.declare_id(TuyaBLELight),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Required(CONF_SWITCH_DP): cv.uint8_t,
             cv.Optional(CONF_BRIGHTNESS_DP): cv.uint8_t,

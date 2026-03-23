@@ -6,7 +6,7 @@ from esphome.const import CONF_ID
 DEPENDENCIES = ["tuya_ble_device"]
 CODEOWNERS = ["@JonathanPenner3D"]
 
-CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID = "tuya_ble_device_id"
 CONF_SWITCH_DP = "switch_dp"
 CONF_CURRENT_TEMP_DP = "current_temperature_dp"
 CONF_TARGET_TEMP_DP = "target_temperature_dp"
@@ -21,9 +21,9 @@ TuyaBLEClimate = tuya_ble_climate_ns.class_(
 )
 
 CONFIG_SCHEMA = (
-    climate.CLIMATE_SCHEMA.extend(
+    climate.climate_schema(TuyaBLEClimate)
+    .extend(
         {
-            cv.GenerateID(): cv.declare_id(TuyaBLEClimate),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Required(CONF_SWITCH_DP): cv.uint8_t,
             cv.Required(CONF_CURRENT_TEMP_DP): cv.uint8_t,

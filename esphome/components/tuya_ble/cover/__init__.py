@@ -6,7 +6,7 @@ from esphome.const import CONF_ID
 DEPENDENCIES = ["tuya_ble_device"]
 CODEOWNERS = ["@JonathanPenner3D"]
 
-CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID = "tuya_ble_device_id"
 CONF_STATE_DP = "state_dp"
 CONF_POSITION_DP = "position_dp"
 CONF_POSITION_SET_DP = "position_set_dp"
@@ -21,9 +21,9 @@ DEFAULT_POSITION_SET_DP = 2  # Target position (0-100)
 DEFAULT_POSITION_DP = 3      # Current position (0-100)
 
 CONFIG_SCHEMA = (
-    cover.COVER_SCHEMA.extend(
+    cover.cover_schema(TuyaBLECover)
+    .extend(
         {
-            cv.GenerateID(): cv.declare_id(TuyaBLECover),
             cv.Required(CONF_DEVICE_ID): cv.use_id(tuya_ble_device.TuyaBLEDevice),
             cv.Optional(CONF_STATE_DP, default=DEFAULT_STATE_DP): cv.uint8_t,
             cv.Optional(CONF_POSITION_DP, default=DEFAULT_POSITION_DP): cv.uint8_t,

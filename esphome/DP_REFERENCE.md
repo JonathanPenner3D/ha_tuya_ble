@@ -43,14 +43,14 @@ typically don't need to specify DP numbers at all.
 ```yaml
 cover:
   - platform: tuya_ble
-    device_id: my_device
+    tuya_ble_device_id: my_device
     name: "Blinds"
     # Defaults: state_dp=1, position_set_dp=2, position_dp=3
     # tilt_dp: 101  # Only for venetian blinds
 
 sensor:
   - platform: tuya_ble
-    device_id: my_device
+    tuya_ble_device_id: my_device
     sensors:
       - dp: 13
         name: "Battery"
@@ -59,7 +59,7 @@ sensor:
 
 number:
   - platform: tuya_ble
-    device_id: my_device
+    tuya_ble_device_id: my_device
     numbers:
       - dp: 105
         name: "Motor Speed"
@@ -136,14 +136,14 @@ Product: `yn4x5fa7`
 ```yaml
 switch:
   - platform: tuya_ble
-    device_id: my_fingerbot
+    tuya_ble_device_id: my_fingerbot
     switches:
       - dp: 2
         name: "Switch"
 
 sensor:
   - platform: tuya_ble
-    device_id: my_fingerbot
+    tuya_ble_device_id: my_fingerbot
     sensors:
       - dp: 12
         name: "Battery"
@@ -152,7 +152,7 @@ sensor:
 
 number:
   - platform: tuya_ble
-    device_id: my_fingerbot
+    tuya_ble_device_id: my_fingerbot
     numbers:
       - dp: 10
         name: "Hold Time"
@@ -218,7 +218,7 @@ Products: `drlajpqc`, `nhj2j7su`, `zmachryv`
 ```yaml
 sensor:
   - platform: tuya_ble
-    device_id: my_trv
+    tuya_ble_device_id: my_trv
     sensors:
       - dp: 102
         name: "Current Temperature"
@@ -233,7 +233,7 @@ sensor:
 
 switch:
   - platform: tuya_ble
-    device_id: my_trv
+    tuya_ble_device_id: my_trv
     switches:
       - dp: 101
         name: "Heating"
@@ -242,7 +242,7 @@ switch:
 
 binary_sensor:
   - platform: tuya_ble
-    device_id: my_trv
+    tuya_ble_device_id: my_trv
     binary_sensors:
       - dp: 105
         name: "Battery Low"
@@ -250,7 +250,7 @@ binary_sensor:
 
 number:
   - platform: tuya_ble
-    device_id: my_trv
+    tuya_ble_device_id: my_trv
     numbers:
       - dp: 27
         name: "Temperature Calibration"
@@ -284,7 +284,7 @@ Product: `59s19z5m`
 ```yaml
 sensor:
   - platform: tuya_ble
-    device_id: my_co2
+    tuya_ble_device_id: my_co2
     sensors:
       - dp: 2
         name: "CO2"
@@ -305,7 +305,7 @@ sensor:
 
 number:
   - platform: tuya_ble
-    device_id: my_co2
+    tuya_ble_device_id: my_co2
     numbers:
       - dp: 17
         name: "Brightness"
@@ -363,7 +363,7 @@ Product: `tv6peegl`
 ```yaml
 sensor:
   - platform: tuya_ble
-    device_id: my_sensor
+    tuya_ble_device_id: my_sensor
     sensors:
       - dp: 1
         name: "Temperature"
@@ -413,14 +413,14 @@ Products: `ludzroix`, `isk2p555`, `gumrixyt`, `uamrw6h3`, `sidhzylo`, `okkyfgfs`
 ```yaml
 lock:
   - platform: tuya_ble
-    device_id: my_lock
+    tuya_ble_device_id: my_lock
     name: "Front Door"
     lock_state_dp: 47      # Motor state (inverted: locked when false)
     lock_control_dp: 46    # Manual lock control
 
 sensor:
   - platform: tuya_ble
-    device_id: my_lock
+    tuya_ble_device_id: my_lock
     sensors:
       - dp: 8
         name: "Lock Battery"
@@ -602,7 +602,7 @@ for these function codes:
 ```yaml
 light:
   - platform: tuya_ble
-    device_id: my_light
+    tuya_ble_device_id: my_light
     name: "LED Strip"
     switch_dp: 20
     brightness_dp: 22
@@ -619,7 +619,7 @@ For a brightness-only light (no color/color temp):
 ```yaml
 light:
   - platform: tuya_ble
-    device_id: my_dimmer
+    tuya_ble_device_id: my_dimmer
     name: "Dimmer"
     switch_dp: 20
     brightness_dp: 22
