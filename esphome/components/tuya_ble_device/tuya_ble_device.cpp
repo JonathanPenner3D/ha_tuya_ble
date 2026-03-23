@@ -16,10 +16,15 @@ static const char *const TAG = "tuya_ble_device";
 
 void TuyaBLEDevice::setup() {
   this->derive_keys_();
-  ESP_LOGD(TAG, "TuyaBLEDevice setup complete, waiting for BLE connection...");
+  ESP_LOGI(TAG, "TuyaBLEDevice setup complete");
+  ESP_LOGI(TAG, "  UUID: %s", this->uuid_.c_str());
+  ESP_LOGI(TAG, "  Device ID: %s", this->device_id_.c_str());
+  ESP_LOGI(TAG, "  Waiting for BLE connection...");
 }
 
 void TuyaBLEDevice::loop() {
+  uint32_t now = millis();
+
   // Write any pending packets
   if (!this->pending_packets_.empty() && this->write_handle_ != 0) {
     auto packet = std::move(this->pending_packets_.front());
@@ -32,6 +37,23 @@ void TuyaBLEDevice::loop() {
 
     if (status != ESP_OK) {
       ESP_LOGW(TAG, "Error writing to BLE characteristic: %d", status);
+    }
+  }
+
+  // Check for pairing timeout - if we're connected but not paired for too long,
+  // disconnect and let ble_client retry the connection from scratch
+  if (this->ble_connected_ && !this->is_paired_ && this->pairing_start_time_ != 0) {
+    if (now - this->pairing_start_time_ > PAIRING_TIMEOUT_MS) {
+      ESP_LOGW(TAG, "Pairing handshake timed out after %us (device_info_received=%s, pair_request_sent=%s)",
+               PAIRING_TIMEOUT_MS / 1000,
+               this->device_info_received_ ? "true" : "false",
+               this->pair_request_sent_ ? "true" : "false");
+      this->pairing_fail_count_++;
+      ESP_LOGW(TAG, "Pairing failure count: %u, disconnecting to retry...", this->pairing_fail_count_);
+      this->pairing_start_time_ = 0;
+      // Disconnect - ble_client will automatically attempt to reconnect
+      this->parent()->set_enabled(false);
+      this->parent()->set_enabled(true);
     }
   }
 }
@@ -269,59 +291,69 @@ void TuyaBLEDevice::gattc_event_handler(esp_gattc_cb_event_t event,
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
-        ESP_LOGI(TAG, "BLE connected");
-        this->is_paired_ = false;
+        ESP_LOGI(TAG, "BLE connected, starting service discovery...");
+        this->ble_connected_ = true;
+        this->set_paired_(false);
         this->device_info_received_ = false;
         this->pair_request_sent_ = false;
         this->current_seq_num_ = 1;
+        this->pairing_start_time_ = millis();
         this->clean_input_();
       } else {
-        ESP_LOGW(TAG, "BLE connect failed, status=%d", param->open.status);
+        ESP_LOGW(TAG, "BLE connect failed, status=%d - will retry automatically", param->open.status);
+        this->ble_connected_ = false;
       }
       break;
     }
     case ESP_GATTC_DISCONNECT_EVT: {
-      ESP_LOGW(TAG, "BLE disconnected");
-      this->is_paired_ = false;
+      bool was_paired = this->is_paired_;
+      ESP_LOGW(TAG, "BLE disconnected (was_paired=%s) - ble_client will attempt reconnection",
+               was_paired ? "true" : "false");
+      this->ble_connected_ = false;
+      this->set_paired_(false);
       this->device_info_received_ = false;
       this->pair_request_sent_ = false;
       this->notify_handle_ = 0;
       this->write_handle_ = 0;
+      this->pairing_start_time_ = 0;
       this->pending_packets_.clear();
       this->clean_input_();
       break;
     }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
+      ESP_LOGI(TAG, "Service discovery complete, looking for Tuya BLE characteristics...");
       // Find our characteristic handles
       auto *notify_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_NOTIFY);
       if (notify_chr == nullptr) {
-        ESP_LOGW(TAG, "Notify characteristic not found");
+        ESP_LOGE(TAG, "Notify characteristic (00002b10-...) not found! Is this a Tuya BLE device?");
         break;
       }
       this->notify_handle_ = notify_chr->handle;
+      ESP_LOGD(TAG, "Found notify characteristic, handle=0x%04X", this->notify_handle_);
 
       auto *write_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_WRITE);
       if (write_chr == nullptr) {
-        ESP_LOGW(TAG, "Write characteristic not found");
+        ESP_LOGE(TAG, "Write characteristic (00002b11-...) not found! Is this a Tuya BLE device?");
         break;
       }
       this->write_handle_ = write_chr->handle;
+      ESP_LOGD(TAG, "Found write characteristic, handle=0x%04X", this->write_handle_);
 
       // Register for notifications
+      ESP_LOGI(TAG, "Registering for BLE notifications...");
       auto status = esp_ble_gattc_register_for_notify(
           gattc_if, this->parent()->get_remote_bda(), this->notify_handle_);
       if (status != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to register for notifications: %d", status);
+        ESP_LOGE(TAG, "Failed to register for notifications: %d", status);
       }
-      ESP_LOGD(TAG, "Characteristics found, registering for notifications");
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
       if (param->reg_for_notify.status == ESP_GATT_OK) {
-        ESP_LOGD(TAG, "Notification registration successful, sending device info request");
+        ESP_LOGI(TAG, "Notification registration successful, beginning pairing handshake...");
         this->start_pairing_();
       } else {
-        ESP_LOGW(TAG, "Notification registration failed: %d", param->reg_for_notify.status);
+        ESP_LOGE(TAG, "Notification registration failed: %d", param->reg_for_notify.status);
       }
       break;
     }
@@ -344,7 +376,7 @@ void TuyaBLEDevice::gattc_event_handler(esp_gattc_cb_event_t event,
 
 void TuyaBLEDevice::start_pairing_() {
   // Step 1: Send DEVICE_INFO request (empty payload)
-  ESP_LOGD(TAG, "Sending DEVICE_INFO request");
+  ESP_LOGI(TAG, "Step 1/3: Sending DEVICE_INFO request to device...");
   std::vector<uint8_t> empty;
   this->send_command_(FUN_SENDER_DEVICE_INFO, empty);
 }
@@ -494,11 +526,11 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
   switch (code) {
     case FUN_SENDER_DEVICE_INFO: {
       if (len < 46) {
-        ESP_LOGW(TAG, "DEVICE_INFO response too short: %u", len);
+        ESP_LOGE(TAG, "DEVICE_INFO response too short (%u bytes, need 46) - is local_key correct?", len);
         return;
       }
 
-      ESP_LOGI(TAG, "Device version: %d.%d, protocol: %d.%d, hardware: %d.%d",
+      ESP_LOGI(TAG, "Step 2/3: DEVICE_INFO received - device v%d.%d, protocol v%d.%d, hardware v%d.%d",
                data[0], data[1], data[2], data[3], data[12], data[13]);
 
       this->protocol_version_ = data[2];
@@ -508,6 +540,7 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
       memcpy(key_material, this->local_key_, 6);
       memcpy(key_material + 6, &data[6], 6);  // srand
       this->compute_md5_(key_material, 12, this->session_key_);
+      ESP_LOGD(TAG, "Session key derived from local_key + device srand");
 
       // Store auth key
       memcpy(this->auth_key_, &data[14], 32);
@@ -516,7 +549,8 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
 
       // Now send pairing request
       if (!this->pair_request_sent_) {
-        ESP_LOGD(TAG, "Sending PAIR request");
+        ESP_LOGI(TAG, "Step 3/3: Sending PAIR request (uuid=%s, device_id=%s)...",
+                 this->uuid_.c_str(), this->device_id_.c_str());
         auto pair_data = this->build_pairing_request_();
         this->send_command_(FUN_SENDER_PAIR, pair_data);
         this->pair_request_sent_ = true;
@@ -525,23 +559,28 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
     }
     case FUN_SENDER_PAIR: {
       if (len < 1) {
-        ESP_LOGW(TAG, "PAIR response too short");
+        ESP_LOGE(TAG, "PAIR response too short - device rejected pairing");
         return;
       }
       uint8_t result = data[0];
       if (result == 2) {
-        ESP_LOGD(TAG, "Device already paired");
+        ESP_LOGI(TAG, "Device reports already paired, treating as success");
         result = 0;
       }
-      this->is_paired_ = (result == 0);
+      bool paired = (result == 0);
+      this->set_paired_(paired);
       if (this->is_paired_) {
-        ESP_LOGI(TAG, "Successfully paired with device");
+        this->pairing_start_time_ = 0;  // Clear timeout
+        this->pairing_fail_count_ = 0;
+        ESP_LOGI(TAG, "Successfully paired with device! Connection is now fully established.");
         // Request initial device status to populate all datapoints
-        ESP_LOGD(TAG, "Requesting initial device status");
+        ESP_LOGI(TAG, "Requesting initial device status...");
         std::vector<uint8_t> empty;
         this->send_command_(FUN_SENDER_DEVICE_STATUS, empty);
       } else {
-        ESP_LOGW(TAG, "Pairing failed with result: %d", result);
+        ESP_LOGE(TAG, "Pairing FAILED with result code: %d", data[0]);
+        ESP_LOGE(TAG, "  Check that uuid, device_id, and local_key are correct");
+        ESP_LOGE(TAG, "  uuid=%s, device_id=%s", this->uuid_.c_str(), this->device_id_.c_str());
       }
       break;
     }
@@ -761,6 +800,25 @@ void TuyaBLEDevice::register_listener(uint8_t dp_id, const DPListener &listener)
   this->dp_listeners_.insert({dp_id, listener});
 }
 
+void TuyaBLEDevice::register_connection_listener(const ConnectionStateListener &listener) {
+  this->connection_listeners_.push_back(listener);
+}
+
+void TuyaBLEDevice::set_paired_(bool paired) {
+  bool changed = (this->is_paired_ != paired);
+  this->is_paired_ = paired;
+  if (changed) {
+    ESP_LOGI(TAG, "Connection state changed: paired=%s", paired ? "true" : "false");
+    this->fire_connection_listeners_(paired);
+  }
+}
+
+void TuyaBLEDevice::fire_connection_listeners_(bool connected) {
+  for (const auto &listener : this->connection_listeners_) {
+    listener(connected);
+  }
+}
+
 std::vector<uint8_t> TuyaBLEDevice::encode_dp_value_(const TuyaBLEDatapoint &dp) {
   std::vector<uint8_t> result;
   switch (dp.type) {
@@ -799,7 +857,11 @@ std::vector<uint8_t> TuyaBLEDevice::encode_dp_value_(const TuyaBLEDatapoint &dp)
 
 void TuyaBLEDevice::send_datapoint(const TuyaBLEDatapoint &dp) {
   if (!this->is_paired_) {
-    ESP_LOGW(TAG, "Cannot send DP, not paired");
+    ESP_LOGW(TAG, "Cannot send DP %u: device not paired (ble_connected=%s, device_info=%s, pair_sent=%s)",
+             dp.id,
+             this->ble_connected_ ? "true" : "false",
+             this->device_info_received_ ? "true" : "false",
+             this->pair_request_sent_ ? "true" : "false");
     return;
   }
 
