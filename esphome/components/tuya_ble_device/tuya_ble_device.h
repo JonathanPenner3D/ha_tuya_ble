@@ -5,8 +5,7 @@
 #include "esphome/components/esp32_ble/ble_uuid.h"
 #include "esphome/core/log.h"
 
-#include <mbedtls/aes.h>
-#include <mbedtls/md5.h>
+#include "tls-includes.h"
 
 #include <vector>
 #include <map>

@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import ble_client, esp32
+from esphome.components import ble_client
 from esphome.const import CONF_ID
 
 CODEOWNERS = ["@JonathanPenner3D"]
@@ -31,15 +31,10 @@ CONFIG_SCHEMA = (
 
 
 async def to_code(config):
-    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_MD5_C", True)
-    try:
-        from esphome.components.esp32 import include_builtin_idf_component
-        include_builtin_idf_component("mbedtls")
-    except ImportError as e:
-        raise ImportError(
-            f"Failed to import include_builtin_idf_component from esphome.components.esp32: {e}. "
-            "tuya_ble_device requires mbedtls from ESP-IDF."
-        ) from e
+    cg.add_build_flag('-DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h"')
+    cg.add_platformio_option(
+        "build_flags", ['-DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h"']
+    )
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
