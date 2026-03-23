@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import ble_client
+from esphome.components import ble_client, esp32
 from esphome.const import CONF_ID
 
 CODEOWNERS = ["@JonathanPenner3D"]
@@ -31,7 +31,7 @@ CONFIG_SCHEMA = (
 
 
 async def to_code(config):
-    cg.add_library("mbedtls", None)
+    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_MD5_C", True)
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
