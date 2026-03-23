@@ -64,7 +64,7 @@ tuya_ble_device:
 # You only need to specify DPs if your device uses non-standard values.
 cover:
   - platform: tuya_ble
-    device_id: cover_controller
+    tuya_ble_device_id: cover_controller
     name: "Bedroom Blinds"
     # tilt_dp: 101  # Uncomment for venetian blind tilt support
 
@@ -76,7 +76,7 @@ cover:
 # means raw value 235 becomes 23.5).
 sensor:
   - platform: tuya_ble
-    device_id: cover_controller
+    tuya_ble_device_id: cover_controller
     sensors:
       - dp: 13
         name: "Battery Level"
@@ -97,7 +97,7 @@ sensor:
 # Map boolean Tuya datapoints to HA binary sensors.
 binary_sensor:
   - platform: tuya_ble
-    device_id: cover_controller
+    tuya_ble_device_id: cover_controller
     binary_sensors:
       - dp: 105
         name: "Battery Low"
@@ -109,7 +109,7 @@ binary_sensor:
 # Map numeric Tuya datapoints to controllable HA number entities.
 number:
   - platform: tuya_ble
-    device_id: cover_controller
+    tuya_ble_device_id: cover_controller
     numbers:
       - dp: 105
         name: "Motor Speed"
@@ -133,7 +133,7 @@ number:
 # Map string Tuya datapoints to HA text entities.
 text:
   - platform: tuya_ble
-    device_id: cover_controller
+    tuya_ble_device_id: cover_controller
     texts:
       - dp: 106
         name: "Device PIN"
@@ -148,7 +148,7 @@ text:
 #
 # light:
 #   - platform: tuya_ble
-#     device_id: my_light
+#     tuya_ble_device_id: my_light
 #     name: "LED Strip"
 #     switch_dp: 20          # On/off
 #     brightness_dp: 22      # Brightness (0-1000)
@@ -166,7 +166,7 @@ text:
 #
 # climate:
 #   - platform: tuya_ble
-#     device_id: my_trv
+#     tuya_ble_device_id: my_trv
 #     name: "Radiator Valve"
 #     switch_dp: 101
 #     current_temperature_dp: 102
@@ -185,7 +185,7 @@ text:
 #
 # lock:
 #   - platform: tuya_ble
-#     device_id: my_lock
+#     tuya_ble_device_id: my_lock
 #     name: "Front Door"
 #     lock_state_dp: 47
 #     lock_control_dp: 46
