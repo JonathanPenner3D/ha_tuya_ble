@@ -18,6 +18,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from homeassistant.helpers.entity import (
+    generate_entity_id,
+)
+
+
 from .const import (
     DOMAIN,
 )
@@ -212,6 +217,9 @@ class TuyaBLEText(TuyaBLEEntity, TextEntity):
         mapping: TuyaBLETextMapping,
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
+        self.entity_id = generate_entity_id(
+            "text.{}", self._attr_unique_id, hass=hass
+        )
         self._mapping = mapping
 
     @property

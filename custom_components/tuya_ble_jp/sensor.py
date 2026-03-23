@@ -36,6 +36,11 @@ from .const import (
     CO2_LEVEL_NORMAL,
     DOMAIN,
 )
+
+from homeassistant.helpers.entity import (
+    generate_entity_id,
+)
+
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
 

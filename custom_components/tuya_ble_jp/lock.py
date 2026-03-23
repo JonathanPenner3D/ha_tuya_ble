@@ -11,6 +11,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from homeassistant.helpers.entity import (
+    generate_entity_id,
+)
+
 from .const import DOMAIN, DPCode
 from .devices import (
     TuyaBLEData,

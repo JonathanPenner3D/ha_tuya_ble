@@ -27,6 +27,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from homeassistant.helpers.entity import (
+    generate_entity_id,
+)
+
+
 from .const import (
     DOMAIN,
     DPCode,
