@@ -536,6 +536,15 @@ void TuyaBLEDevice::parse_input_() {
   ESP_LOGD(TAG, "Received cmd=0x%04X seq=%u resp_to=%u len=%u", code, seq_num, response_to,
            data_len);
 
+  // Hex dump data portion of decrypted packet for diagnostics
+  if (data_len > 0 && data_len <= 32) {
+    char hex[32 * 3 + 1];
+    for (size_t i = 0; i < data_len; i++)
+      snprintf(hex + i * 3, 4, "%02X ", raw[12 + i]);
+    hex[data_len * 3 - 1] = '\0';
+    ESP_LOGD(TAG, "  Decrypted data payload: [%s]", hex);
+  }
+
   this->handle_command_or_response_(seq_num, response_to, code, &raw[12], data_len);
 }
 
@@ -677,12 +686,26 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
 }
 
 void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t start_pos) {
-  ESP_LOGD(TAG, "Parsing DPs: total_len=%u start_pos=%u", len, start_pos);
+  // Dump entire DP payload hex for debugging
+  {
+    size_t dump_len = len - start_pos;
+    if (dump_len > 0 && dump_len <= 64) {
+      char hex[64 * 3 + 1];
+      for (size_t i = 0; i < dump_len; i++)
+        snprintf(hex + i * 3, 4, "%02X ", data[start_pos + i]);
+      hex[dump_len * 3 - 1] = '\0';
+      ESP_LOGD(TAG, "Parsing DPs: total_len=%u start_pos=%u payload=[%s]", len, start_pos, hex);
+    } else {
+      ESP_LOGD(TAG, "Parsing DPs: total_len=%u start_pos=%u payload_len=%u", len, start_pos, dump_len);
+    }
+  }
+
   size_t pos = start_pos;
   while (len - pos >= 4) {
-    uint8_t dp_id = data[pos++];
-    uint8_t dp_type_raw = data[pos++];
-    uint8_t dp_len = data[pos++];
+    uint8_t dp_id = data[pos];
+    uint8_t dp_type_raw = data[pos + 1];
+    uint8_t dp_len = data[pos + 2];
+    pos += 3;
 
     if (dp_type_raw > DT_BITMAP) {
       ESP_LOGW(TAG, "Invalid DP type: %d at offset %u (dp_id=%u)", dp_type_raw, pos - 2, dp_id);
@@ -693,6 +716,11 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
       return;
     }
 
+    // Copy DP value bytes to local buffer to avoid any potential data pointer issues
+    uint8_t dp_data[256];
+    size_t copy_len = dp_len < sizeof(dp_data) ? dp_len : sizeof(dp_data);
+    memcpy(dp_data, &data[pos], copy_len);
+
     TuyaBLEDataPointType dp_type = static_cast<TuyaBLEDataPointType>(dp_type_raw);
     TuyaBLEDatapoint dp;
     dp.id = dp_id;
@@ -700,40 +728,43 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
 
     switch (dp_type) {
       case DT_BOOL:
-        dp.value_bool = (dp_len > 0 && data[pos] != 0);
+        dp.value_bool = (copy_len > 0 && dp_data[0] != 0);
         dp.value_int = dp.value_bool ? 1 : 0;
         break;
       case DT_VALUE: {
-        // Build unsigned value from big-endian bytes, then sign-extend
-        uint32_t uval = 0;
-        for (size_t i = 0; i < dp_len && i < 4; i++) {
-          uval = (uval << 8) | data[pos + i];
+        // Right-align into 4-byte buffer, then read as big-endian int32
+        uint8_t vbuf[4] = {0, 0, 0, 0};
+        size_t n = (copy_len < 4) ? copy_len : 4;
+        memcpy(vbuf + (4 - n), dp_data, n);
+        uint32_t uval = ((uint32_t) vbuf[0] << 24) | ((uint32_t) vbuf[1] << 16) |
+                        ((uint32_t) vbuf[2] << 8) | vbuf[3];
+        // Sign extend for shorter-than-4-byte values (matches Python signed=True)
+        if (n > 0 && n < 4 && (vbuf[4 - n] & 0x80)) {
+          uval |= (0xFFFFFFFF << (n * 8));
         }
-        // Sign extend based on actual byte width
-        if (dp_len > 0 && dp_len < 4 && (data[pos] & 0x80)) {
-          // Fill upper bits with 1s for sign extension
-          uint32_t mask = 0xFFFFFFFF << (dp_len * 8);
-          uval |= mask;
-        }
+        dp.value_int = static_cast<int32_t>(uval);
+        dp.value_bool = (dp.value_int != 0);
+        ESP_LOGD(TAG, "  DT_VALUE parse: n=%u vbuf=[%02X %02X %02X %02X] uval=0x%08X value_int=%d",
+                 n, vbuf[0], vbuf[1], vbuf[2], vbuf[3], uval, dp.value_int);
+        break;
+      }
+      case DT_ENUM: {
+        // Same approach: right-align and read big-endian (matches Python int.from_bytes signed=True)
+        uint8_t vbuf[4] = {0, 0, 0, 0};
+        size_t n = (copy_len < 4) ? copy_len : 4;
+        memcpy(vbuf + (4 - n), dp_data, n);
+        uint32_t uval = ((uint32_t) vbuf[0] << 24) | ((uint32_t) vbuf[1] << 16) |
+                        ((uint32_t) vbuf[2] << 8) | vbuf[3];
         dp.value_int = static_cast<int32_t>(uval);
         dp.value_bool = (dp.value_int != 0);
         break;
       }
-      case DT_ENUM: {
-        int32_t val = 0;
-        for (size_t i = 0; i < dp_len && i < 4; i++) {
-          val = (val << 8) | data[pos + i];
-        }
-        dp.value_int = val;
-        dp.value_bool = (val != 0);
-        break;
-      }
       case DT_STRING:
-        dp.value_string = std::string((const char *) &data[pos], dp_len);
+        dp.value_string = std::string((const char *) dp_data, copy_len);
         break;
       case DT_RAW:
       case DT_BITMAP:
-        dp.value_raw.assign(&data[pos], &data[pos + dp_len]);
+        dp.value_raw.assign(dp_data, dp_data + copy_len);
         break;
     }
 
@@ -741,11 +772,11 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
     {
       static const char *const TYPE_NAMES[] = {"RAW", "BOOL", "VALUE", "STRING", "ENUM", "BITMAP"};
       const char *type_name = (dp_type_raw <= DT_BITMAP) ? TYPE_NAMES[dp_type_raw] : "?";
-      if (dp_len <= 8) {
+      if (copy_len <= 8) {
         char hex[24];
-        for (size_t i = 0; i < dp_len && i < 8; i++)
-          snprintf(hex + i * 3, 4, "%02X ", data[pos + i]);
-        if (dp_len > 0) hex[dp_len * 3 - 1] = '\0'; else hex[0] = '\0';
+        for (size_t i = 0; i < copy_len && i < 8; i++)
+          snprintf(hex + i * 3, 4, "%02X ", dp_data[i]);
+        if (copy_len > 0) hex[copy_len * 3 - 1] = '\0'; else hex[0] = '\0';
         ESP_LOGD(TAG, "DP update: id=%u type=%s(%u) len=%u raw=[%s] value_int=%d",
                  dp_id, type_name, dp_type_raw, dp_len, hex, dp.value_int);
       } else {
