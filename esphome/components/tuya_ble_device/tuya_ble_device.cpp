@@ -322,22 +322,37 @@ void TuyaBLEDevice::gattc_event_handler(esp_gattc_cb_event_t event,
     }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       ESP_LOGI(TAG, "Service discovery complete, looking for Tuya BLE characteristics...");
-      // Find our characteristic handles
-      auto *notify_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_NOTIFY);
-      if (notify_chr == nullptr) {
-        ESP_LOGE(TAG, "Notify characteristic (00002b10-...) not found! Is this a Tuya BLE device?");
-        break;
-      }
-      this->notify_handle_ = notify_chr->handle;
-      ESP_LOGD(TAG, "Found notify characteristic, handle=0x%04X", this->notify_handle_);
 
-      auto *write_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_WRITE);
-      if (write_chr == nullptr) {
-        ESP_LOGE(TAG, "Write characteristic (00002b11-...) not found! Is this a Tuya BLE device?");
+      // Try all known Tuya BLE service UUIDs to find the characteristics.
+      // Different Tuya devices expose the same characteristics under different service UUIDs.
+      uint16_t found_notify_handle = 0;
+      uint16_t found_write_handle = 0;
+
+      for (size_t i = 0; i < NUM_SERVICE_UUIDS; i++) {
+        auto *notify_chr = this->parent()->get_characteristic(SERVICE_UUIDS[i], CHAR_NOTIFY);
+        if (notify_chr != nullptr) {
+          auto *write_chr = this->parent()->get_characteristic(SERVICE_UUIDS[i], CHAR_WRITE);
+          if (write_chr != nullptr) {
+            ESP_LOGI(TAG, "Found Tuya characteristics under service UUID index %u", i);
+            found_notify_handle = notify_chr->handle;
+            found_write_handle = write_chr->handle;
+            break;
+          }
+        }
+      }
+
+      if (found_notify_handle == 0 || found_write_handle == 0) {
+        ESP_LOGE(TAG, "Tuya BLE characteristics not found under any known service UUID!");
+        ESP_LOGE(TAG, "  Tried: 00001910-..., 0000fd50-..., 0000a201-...");
+        ESP_LOGE(TAG, "  Notify char: 00002b10-..., Write char: 00002b11-...");
+        ESP_LOGE(TAG, "  Is this a Tuya BLE device? Check the MAC address.");
         break;
       }
-      this->write_handle_ = write_chr->handle;
-      ESP_LOGD(TAG, "Found write characteristic, handle=0x%04X", this->write_handle_);
+
+      this->notify_handle_ = found_notify_handle;
+      this->write_handle_ = found_write_handle;
+      ESP_LOGD(TAG, "Notify handle=0x%04X, Write handle=0x%04X",
+               this->notify_handle_, this->write_handle_);
 
       // Register for notifications
       ESP_LOGI(TAG, "Registering for BLE notifications...");

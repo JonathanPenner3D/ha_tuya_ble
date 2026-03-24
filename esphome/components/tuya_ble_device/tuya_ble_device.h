@@ -18,8 +18,14 @@ namespace tuya_ble_device {
 static const uint8_t GATT_MTU = 20;
 
 // GATT characteristics — using esp32_ble::ESPBTUUID
-static const esp32_ble::ESPBTUUID SERVICE_UUID =
-    esp32_ble::ESPBTUUID::from_raw("00001910-0000-1000-8000-00805f9b34fb");
+// Different Tuya BLE devices use different service UUIDs for the same characteristics.
+// We try all known service UUIDs during discovery.
+static const esp32_ble::ESPBTUUID SERVICE_UUIDS[] = {
+    esp32_ble::ESPBTUUID::from_raw("00001910-0000-1000-8000-00805f9b34fb"),  // Common Tuya BLE service
+    esp32_ble::ESPBTUUID::from_raw("0000fd50-0000-1000-8000-00805f9b34fb"),  // Tuya registered BLE service
+    esp32_ble::ESPBTUUID::from_raw("0000a201-0000-1000-8000-00805f9b34fb"),  // Alternate Tuya BLE service
+};
+static const size_t NUM_SERVICE_UUIDS = sizeof(SERVICE_UUIDS) / sizeof(SERVICE_UUIDS[0]);
 static const esp32_ble::ESPBTUUID CHAR_NOTIFY =
     esp32_ble::ESPBTUUID::from_raw("00002b10-0000-1000-8000-00805f9b34fb");
 static const esp32_ble::ESPBTUUID CHAR_WRITE =
