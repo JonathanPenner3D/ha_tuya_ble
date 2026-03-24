@@ -30,9 +30,11 @@ void TuyaBLESensor::on_dp_update_(const tuya_ble_device::TuyaBLEDatapoint &dp) {
       value = static_cast<float>(dp.value_int) / this->coefficient_;
       break;
     default:
-      ESP_LOGW(TAG, "Unsupported DP type %d for sensor", dp.type);
+      ESP_LOGW(TAG, "DP %u: unsupported type %d for sensor", dp.id, dp.type);
       return;
   }
+  ESP_LOGD(TAG, "DP %u: raw_int=%d type=%u coefficient=%.2f → publishing %.2f",
+           dp.id, dp.value_int, dp.type, this->coefficient_, value);
   this->publish_state(value);
 }
 

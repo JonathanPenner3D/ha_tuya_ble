@@ -11,6 +11,9 @@ CONF_DP = "dp"
 CONF_DP_TYPE = "dp_type"
 CONF_COEFFICIENT = "coefficient"
 CONF_NUMBERS = "numbers"
+CONF_MIN_VALUE = "min_value"
+CONF_MAX_VALUE = "max_value"
+CONF_STEP = "step"
 
 tuya_ble_number_ns = cg.esphome_ns.namespace("tuya_ble_number")
 TuyaBLENumber = tuya_ble_number_ns.class_(
@@ -33,6 +36,9 @@ SINGLE_NUMBER_SCHEMA = (
             cv.Required(CONF_DP): cv.uint8_t,
             cv.Optional(CONF_DP_TYPE): cv.enum(DP_TYPES, lower=True),
             cv.Optional(CONF_COEFFICIENT, default=1.0): cv.float_,
+            cv.Optional(CONF_MIN_VALUE, default=0): cv.float_,
+            cv.Optional(CONF_MAX_VALUE, default=100): cv.float_,
+            cv.Optional(CONF_STEP, default=1): cv.float_,
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
@@ -52,9 +58,9 @@ async def to_code(config):
     for num_conf in config[CONF_NUMBERS]:
         var = await number.new_number(
             num_conf,
-            min_value=num_conf.get("min_value", 0),
-            max_value=num_conf.get("max_value", 100),
-            step=num_conf.get("step", 1),
+            min_value=num_conf[CONF_MIN_VALUE],
+            max_value=num_conf[CONF_MAX_VALUE],
+            step=num_conf[CONF_STEP],
         )
         await cg.register_component(var, num_conf)
         cg.add(var.set_tuya_ble_device(parent))
