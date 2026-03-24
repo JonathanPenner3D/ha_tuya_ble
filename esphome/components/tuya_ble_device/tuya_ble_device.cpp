@@ -25,19 +25,23 @@ void TuyaBLEDevice::setup() {
 void TuyaBLEDevice::loop() {
   uint32_t now = millis();
 
-  // Write any pending packets
-  if (!this->pending_packets_.empty() && this->write_handle_ != 0) {
-    auto packet = std::move(this->pending_packets_.front());
-    this->pending_packets_.erase(this->pending_packets_.begin());
+  // Write all pending packets — use write-without-response to match Python reference.
+  // Python sends all fragmented packets of a command sequentially without waiting for
+  // ATT-level acknowledgments. With write-with-response (RSP), the ESP32 BLE stack only
+  // allows one outstanding write at a time, causing multi-packet commands to fail.
+  while (!this->pending_packets_.empty() && this->write_handle_ != 0) {
+    auto &packet = this->pending_packets_.front();
 
     auto status = esp_ble_gattc_write_char(
         this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
         this->write_handle_, packet.size(), packet.data(),
-        ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+        ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
 
     if (status != ESP_OK) {
-      ESP_LOGW(TAG, "Error writing to BLE characteristic: %d", status);
+      ESP_LOGW(TAG, "Error writing to BLE characteristic: %d — will retry next loop", status);
+      break;  // Keep packet in queue for retry
     }
+    this->pending_packets_.erase(this->pending_packets_.begin());
   }
 
   // Check for pairing timeout - if we're connected but not paired for too long,
@@ -600,26 +604,21 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
       break;
     }
     case FUN_SENDER_DPS: {
-      // Response to our DPS or DEVICE_STATUS command.
-      // If len > 1 it may contain DP data; otherwise it's just an ack.
-      if (len > 1) {
-        ESP_LOGD(TAG, "FUN_SENDER_DPS response contains %u bytes of DP data", len);
-        this->parse_datapoints_v3_(data, len, 0);
-      } else {
-        uint8_t result = (len >= 1) ? data[0] : 0xFF;
-        ESP_LOGD(TAG, "FUN_SENDER_DPS ack, result=%u", result);
-      }
+      // Response/ack to our DPS command — just a result byte, not DP data.
+      // Python doesn't explicitly handle this (falls through to response future resolution).
+      uint8_t result = (len >= 1) ? data[0] : 0xFF;
+      ESP_LOGD(TAG, "FUN_SENDER_DPS ack, result=%u", result);
       break;
     }
     case FUN_SENDER_DEVICE_STATUS: {
-      // Response to our device status request — may contain DP data
-      if (len > 0) {
-        ESP_LOGD(TAG, "DEVICE_STATUS response with %u bytes", len);
-        this->parse_datapoints_v3_(data, len, 0);
-      }
+      // Response to DEVICE_STATUS request — just a 1-byte result code.
+      // The actual DP data arrives asynchronously via FUN_RECEIVE_DP/SIGN_DP notifications.
+      uint8_t result = (len >= 1) ? data[0] : 0xFF;
+      ESP_LOGD(TAG, "DEVICE_STATUS ack, result=%u", result);
       break;
     }
     case FUN_RECEIVE_DP: {
+      ESP_LOGD(TAG, "FUN_RECEIVE_DP: %u bytes of DP data", len);
       this->parse_datapoints_v3_(data, len, 0);
       std::vector<uint8_t> empty;
       this->send_response_(code, empty, seq_num);
@@ -627,14 +626,17 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
     }
     case FUN_RECEIVE_SIGN_DP: {
       if (len < 3) return;
-      // uint16_t dp_seq_num = ((uint16_t)data[0] << 8) | data[1];
-      // uint8_t flags = data[2];
-      this->parse_datapoints_v3_(data, len, 3);
-      // Send response with dp_seq_num, flags, result
+      // Format: dp_seq_num(2B) + DP_data
+      // Python reference starts parsing at offset 2 (matching _parse_datapoints_v3(... data, 2))
+      uint16_t dp_seq_num = ((uint16_t) data[0] << 8) | data[1];
+      uint8_t flags = data[2];  // First byte of DP data (used in response, per Python reference)
+      ESP_LOGD(TAG, "FUN_RECEIVE_SIGN_DP: dp_seq=%u, %u bytes", dp_seq_num, len);
+      this->parse_datapoints_v3_(data, len, 2);
+      // Send response: dp_seq_num(2B) + flags(1B) + result(1B)
       std::vector<uint8_t> resp(4);
-      resp[0] = data[0];
-      resp[1] = data[1];
-      resp[2] = data[2];
+      resp[0] = (dp_seq_num >> 8) & 0xFF;
+      resp[1] = dp_seq_num & 0xFF;
+      resp[2] = flags;
       resp[3] = 0;  // result = success
       this->send_response_(code, resp, seq_num);
       break;
@@ -675,6 +677,7 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
 }
 
 void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t start_pos) {
+  ESP_LOGD(TAG, "Parsing DPs: total_len=%u start_pos=%u", len, start_pos);
   size_t pos = start_pos;
   while (len - pos >= 4) {
     uint8_t dp_id = data[pos++];
@@ -682,11 +685,11 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
     uint8_t dp_len = data[pos++];
 
     if (dp_type_raw > DT_BITMAP) {
-      ESP_LOGW(TAG, "Invalid DP type: %d", dp_type_raw);
+      ESP_LOGW(TAG, "Invalid DP type: %d at offset %u (dp_id=%u)", dp_type_raw, pos - 2, dp_id);
       return;
     }
     if (pos + dp_len > len) {
-      ESP_LOGW(TAG, "DP data exceeds buffer");
+      ESP_LOGW(TAG, "DP data exceeds buffer: pos=%u dp_len=%u total=%u", pos, dp_len, len);
       return;
     }
 
@@ -734,7 +737,17 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
         break;
     }
 
-    ESP_LOGD(TAG, "DP update: id=%u type=%u value_int=%d", dp_id, dp_type_raw, dp.value_int);
+    // Log raw bytes for debugging
+    if (dp_len <= 8) {
+      char hex[24];
+      for (size_t i = 0; i < dp_len && i < 8; i++)
+        snprintf(hex + i * 3, 4, "%02X ", data[pos + i]);
+      if (dp_len > 0) hex[dp_len * 3 - 1] = '\0'; else hex[0] = '\0';
+      ESP_LOGD(TAG, "DP update: id=%u type=%u len=%u raw=[%s] value_int=%d",
+               dp_id, dp_type_raw, dp_len, hex, dp.value_int);
+    } else {
+      ESP_LOGD(TAG, "DP update: id=%u type=%u len=%u value_int=%d", dp_id, dp_type_raw, dp_len, dp.value_int);
+    }
 
     // Notify listeners
     auto range = this->dp_listeners_.equal_range(dp_id);
