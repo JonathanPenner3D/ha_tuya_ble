@@ -599,6 +599,26 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
       }
       break;
     }
+    case FUN_SENDER_DPS: {
+      // Response to our DPS or DEVICE_STATUS command.
+      // If len > 1 it may contain DP data; otherwise it's just an ack.
+      if (len > 1) {
+        ESP_LOGD(TAG, "FUN_SENDER_DPS response contains %u bytes of DP data", len);
+        this->parse_datapoints_v3_(data, len, 0);
+      } else {
+        uint8_t result = (len >= 1) ? data[0] : 0xFF;
+        ESP_LOGD(TAG, "FUN_SENDER_DPS ack, result=%u", result);
+      }
+      break;
+    }
+    case FUN_SENDER_DEVICE_STATUS: {
+      // Response to our device status request — may contain DP data
+      if (len > 0) {
+        ESP_LOGD(TAG, "DEVICE_STATUS response with %u bytes", len);
+        this->parse_datapoints_v3_(data, len, 0);
+      }
+      break;
+    }
     case FUN_RECEIVE_DP: {
       this->parse_datapoints_v3_(data, len, 0);
       std::vector<uint8_t> empty;

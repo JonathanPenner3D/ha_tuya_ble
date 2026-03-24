@@ -53,10 +53,10 @@ cover::CoverTraits TuyaBLECover::get_traits() {
 void TuyaBLECover::control(const cover::CoverCall &call) {
   if (call.get_stop()) {
     if (this->state_dp_.has_value()) {
-      ESP_LOGD(TAG, "Sending STOP command via state DP %u", this->state_dp_.value());
+      ESP_LOGD(TAG, "Sending STOP command via state DP %u (type=ENUM, value=1)", this->state_dp_.value());
       tuya_ble_device::TuyaBLEDatapoint dp;
       dp.id = this->state_dp_.value();
-      dp.type = tuya_ble_device::DT_VALUE;
+      dp.type = tuya_ble_device::DT_ENUM;
       dp.value_int = 1;  // STOP
       this->device_->send_datapoint(dp);
     }
@@ -68,20 +68,20 @@ void TuyaBLECover::control(const cover::CoverCall &call) {
     if (pos == cover::COVER_OPEN) {
       // Open command via state DP
       if (this->state_dp_.has_value()) {
-        ESP_LOGD(TAG, "Sending OPEN command via state DP %u", this->state_dp_.value());
+        ESP_LOGD(TAG, "Sending OPEN command via state DP %u (type=ENUM, value=0)", this->state_dp_.value());
         tuya_ble_device::TuyaBLEDatapoint dp;
         dp.id = this->state_dp_.value();
-        dp.type = tuya_ble_device::DT_VALUE;
+        dp.type = tuya_ble_device::DT_ENUM;
         dp.value_int = 0;  // OPEN
         this->device_->send_datapoint(dp);
       }
     } else if (pos == cover::COVER_CLOSED) {
       // Close command via state DP
       if (this->state_dp_.has_value()) {
-        ESP_LOGD(TAG, "Sending CLOSE command via state DP %u", this->state_dp_.value());
+        ESP_LOGD(TAG, "Sending CLOSE command via state DP %u (type=ENUM, value=2)", this->state_dp_.value());
         tuya_ble_device::TuyaBLEDatapoint dp;
         dp.id = this->state_dp_.value();
-        dp.type = tuya_ble_device::DT_VALUE;
+        dp.type = tuya_ble_device::DT_ENUM;
         dp.value_int = 2;  // CLOSE
         this->device_->send_datapoint(dp);
       }
