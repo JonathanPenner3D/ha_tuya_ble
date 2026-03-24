@@ -59,10 +59,8 @@ enum TuyaBLEDataPointType : uint8_t {
 struct TuyaBLEDatapoint {
   uint8_t id;
   TuyaBLEDataPointType type;
-  union {
-    bool value_bool;
-    int32_t value_int;
-  };
+  bool value_bool;
+  int32_t value_int;
   std::string value_string;
   std::vector<uint8_t> value_raw;
 };
