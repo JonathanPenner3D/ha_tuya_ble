@@ -18,8 +18,14 @@ namespace tuya_ble_device {
 static const uint8_t GATT_MTU = 20;
 
 // GATT characteristics — using esp32_ble::ESPBTUUID
-static const esp32_ble::ESPBTUUID SERVICE_UUID =
-    esp32_ble::ESPBTUUID::from_raw("0000fd50-0000-1000-8000-00805f9b34fb");
+// Different Tuya BLE devices use different service UUIDs for the same characteristics.
+// We try all known service UUIDs during discovery.
+static const esp32_ble::ESPBTUUID SERVICE_UUIDS[] = {
+    esp32_ble::ESPBTUUID::from_raw("00001910-0000-1000-8000-00805f9b34fb"),  // Common Tuya BLE service
+    esp32_ble::ESPBTUUID::from_raw("0000fd50-0000-1000-8000-00805f9b34fb"),  // Tuya registered BLE service
+    esp32_ble::ESPBTUUID::from_raw("0000a201-0000-1000-8000-00805f9b34fb"),  // Alternate Tuya BLE service
+};
+static const size_t NUM_SERVICE_UUIDS = sizeof(SERVICE_UUIDS) / sizeof(SERVICE_UUIDS[0]);
 static const esp32_ble::ESPBTUUID CHAR_NOTIFY =
     esp32_ble::ESPBTUUID::from_raw("00002b10-0000-1000-8000-00805f9b34fb");
 static const esp32_ble::ESPBTUUID CHAR_WRITE =
@@ -53,16 +59,17 @@ enum TuyaBLEDataPointType : uint8_t {
 struct TuyaBLEDatapoint {
   uint8_t id;
   TuyaBLEDataPointType type;
-  union {
-    bool value_bool;
-    int32_t value_int;
-  };
+  bool value_bool;
+  int32_t value_int;
   std::string value_string;
   std::vector<uint8_t> value_raw;
 };
 
 // Callback type for datapoint updates
 using DPListener = std::function<void(const TuyaBLEDatapoint &)>;
+
+// Callback type for connection state changes
+using ConnectionStateListener = std::function<void(bool connected)>;
 
 class TuyaBLEDevice : public Component, public ble_client::BLEClientNode {
  public:
@@ -83,11 +90,17 @@ class TuyaBLEDevice : public Component, public ble_client::BLEClientNode {
   // Entity registration
   void register_listener(uint8_t dp_id, const DPListener &listener);
 
+  // Connection state listener registration
+  void register_connection_listener(const ConnectionStateListener &listener);
+
   // Send a datapoint value to the device
   void send_datapoint(const TuyaBLEDatapoint &dp);
 
   // Check if connected and paired
   bool is_paired() const { return this->is_paired_; }
+
+  // Check if BLE link is up (connected but not necessarily paired)
+  bool is_connected() const { return this->ble_connected_; }
 
  protected:
   // Key management
@@ -130,6 +143,8 @@ class TuyaBLEDevice : public Component, public ble_client::BLEClientNode {
   // Connection state machine
   void start_pairing_();
   std::vector<uint8_t> build_pairing_request_();
+  void set_paired_(bool paired);
+  void fire_connection_listeners_(bool connected);
 
   // Time response
   void send_time1_response_(uint32_t seq_num);
@@ -155,6 +170,9 @@ class TuyaBLEDevice : public Component, public ble_client::BLEClientNode {
   uint32_t current_seq_num_{1};
   bool device_info_received_{false};
   bool pair_request_sent_{false};
+  bool ble_connected_{false};
+  uint32_t pairing_start_time_{0};
+  uint8_t pairing_fail_count_{0};
 
   // BLE handles
   uint16_t notify_handle_{0};
@@ -171,8 +189,13 @@ class TuyaBLEDevice : public Component, public ble_client::BLEClientNode {
   // DP listeners
   std::multimap<uint8_t, DPListener> dp_listeners_;
 
+  // Connection state listeners
+  std::vector<ConnectionStateListener> connection_listeners_;
+
   // Retry/reconnect tracking
   uint32_t last_connect_attempt_{0};
+  static const uint32_t PAIRING_TIMEOUT_MS = 30000;    // 30s timeout for pairing handshake
+  static const uint32_t RECONNECT_COOLDOWN_MS = 5000;  // 5s between reconnect attempts
 };
 
 }  // namespace tuya_ble_device

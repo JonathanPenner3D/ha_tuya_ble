@@ -16,22 +16,48 @@ static const char *const TAG = "tuya_ble_device";
 
 void TuyaBLEDevice::setup() {
   this->derive_keys_();
-  ESP_LOGD(TAG, "TuyaBLEDevice setup complete, waiting for BLE connection...");
+  ESP_LOGI(TAG, "TuyaBLEDevice setup complete");
+  ESP_LOGI(TAG, "  UUID: %s", this->uuid_.c_str());
+  ESP_LOGI(TAG, "  Device ID: %s", this->device_id_.c_str());
+  ESP_LOGI(TAG, "  Waiting for BLE connection...");
 }
 
 void TuyaBLEDevice::loop() {
-  // Write any pending packets
-  if (!this->pending_packets_.empty() && this->write_handle_ != 0) {
-    auto packet = std::move(this->pending_packets_.front());
-    this->pending_packets_.erase(this->pending_packets_.begin());
+  uint32_t now = millis();
+
+  // Write all pending packets — use write-without-response to match Python reference.
+  // Python sends all fragmented packets of a command sequentially without waiting for
+  // ATT-level acknowledgments. With write-with-response (RSP), the ESP32 BLE stack only
+  // allows one outstanding write at a time, causing multi-packet commands to fail.
+  while (!this->pending_packets_.empty() && this->write_handle_ != 0) {
+    auto &packet = this->pending_packets_.front();
 
     auto status = esp_ble_gattc_write_char(
         this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
         this->write_handle_, packet.size(), packet.data(),
-        ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+        ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
 
     if (status != ESP_OK) {
-      ESP_LOGW(TAG, "Error writing to BLE characteristic: %d", status);
+      ESP_LOGW(TAG, "Error writing to BLE characteristic: %d — will retry next loop", status);
+      break;  // Keep packet in queue for retry
+    }
+    this->pending_packets_.erase(this->pending_packets_.begin());
+  }
+
+  // Check for pairing timeout - if we're connected but not paired for too long,
+  // disconnect and let ble_client retry the connection from scratch
+  if (this->ble_connected_ && !this->is_paired_ && this->pairing_start_time_ != 0) {
+    if (now - this->pairing_start_time_ > PAIRING_TIMEOUT_MS) {
+      ESP_LOGW(TAG, "Pairing handshake timed out after %us (device_info_received=%s, pair_request_sent=%s)",
+               PAIRING_TIMEOUT_MS / 1000,
+               this->device_info_received_ ? "true" : "false",
+               this->pair_request_sent_ ? "true" : "false");
+      this->pairing_fail_count_++;
+      ESP_LOGW(TAG, "Pairing failure count: %u, disconnecting to retry...", this->pairing_fail_count_);
+      this->pairing_start_time_ = 0;
+      // Disconnect - ble_client will automatically attempt to reconnect
+      this->parent()->set_enabled(false);
+      this->parent()->set_enabled(true);
     }
   }
 }
@@ -269,59 +295,84 @@ void TuyaBLEDevice::gattc_event_handler(esp_gattc_cb_event_t event,
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
-        ESP_LOGI(TAG, "BLE connected");
-        this->is_paired_ = false;
+        ESP_LOGI(TAG, "BLE connected, starting service discovery...");
+        this->ble_connected_ = true;
+        this->set_paired_(false);
         this->device_info_received_ = false;
         this->pair_request_sent_ = false;
         this->current_seq_num_ = 1;
+        this->pairing_start_time_ = millis();
         this->clean_input_();
       } else {
-        ESP_LOGW(TAG, "BLE connect failed, status=%d", param->open.status);
+        ESP_LOGW(TAG, "BLE connect failed, status=%d - will retry automatically", param->open.status);
+        this->ble_connected_ = false;
       }
       break;
     }
     case ESP_GATTC_DISCONNECT_EVT: {
-      ESP_LOGW(TAG, "BLE disconnected");
-      this->is_paired_ = false;
+      bool was_paired = this->is_paired_;
+      ESP_LOGW(TAG, "BLE disconnected (was_paired=%s) - ble_client will attempt reconnection",
+               was_paired ? "true" : "false");
+      this->ble_connected_ = false;
+      this->set_paired_(false);
       this->device_info_received_ = false;
       this->pair_request_sent_ = false;
       this->notify_handle_ = 0;
       this->write_handle_ = 0;
+      this->pairing_start_time_ = 0;
       this->pending_packets_.clear();
       this->clean_input_();
       break;
     }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      // Find our characteristic handles
-      auto *notify_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_NOTIFY);
-      if (notify_chr == nullptr) {
-        ESP_LOGW(TAG, "Notify characteristic not found");
-        break;
-      }
-      this->notify_handle_ = notify_chr->handle;
+      ESP_LOGI(TAG, "Service discovery complete, looking for Tuya BLE characteristics...");
 
-      auto *write_chr = this->parent()->get_characteristic(SERVICE_UUID, CHAR_WRITE);
-      if (write_chr == nullptr) {
-        ESP_LOGW(TAG, "Write characteristic not found");
+      // Try all known Tuya BLE service UUIDs to find the characteristics.
+      // Different Tuya devices expose the same characteristics under different service UUIDs.
+      uint16_t found_notify_handle = 0;
+      uint16_t found_write_handle = 0;
+
+      for (size_t i = 0; i < NUM_SERVICE_UUIDS; i++) {
+        auto *notify_chr = this->parent()->get_characteristic(SERVICE_UUIDS[i], CHAR_NOTIFY);
+        if (notify_chr != nullptr) {
+          auto *write_chr = this->parent()->get_characteristic(SERVICE_UUIDS[i], CHAR_WRITE);
+          if (write_chr != nullptr) {
+            ESP_LOGI(TAG, "Found Tuya characteristics under service UUID index %u", i);
+            found_notify_handle = notify_chr->handle;
+            found_write_handle = write_chr->handle;
+            break;
+          }
+        }
+      }
+
+      if (found_notify_handle == 0 || found_write_handle == 0) {
+        ESP_LOGE(TAG, "Tuya BLE characteristics not found under any known service UUID!");
+        ESP_LOGE(TAG, "  Tried: 00001910-..., 0000fd50-..., 0000a201-...");
+        ESP_LOGE(TAG, "  Notify char: 00002b10-..., Write char: 00002b11-...");
+        ESP_LOGE(TAG, "  Is this a Tuya BLE device? Check the MAC address.");
         break;
       }
-      this->write_handle_ = write_chr->handle;
+
+      this->notify_handle_ = found_notify_handle;
+      this->write_handle_ = found_write_handle;
+      ESP_LOGD(TAG, "Notify handle=0x%04X, Write handle=0x%04X",
+               this->notify_handle_, this->write_handle_);
 
       // Register for notifications
+      ESP_LOGI(TAG, "Registering for BLE notifications...");
       auto status = esp_ble_gattc_register_for_notify(
           gattc_if, this->parent()->get_remote_bda(), this->notify_handle_);
       if (status != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to register for notifications: %d", status);
+        ESP_LOGE(TAG, "Failed to register for notifications: %d", status);
       }
-      ESP_LOGD(TAG, "Characteristics found, registering for notifications");
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
       if (param->reg_for_notify.status == ESP_GATT_OK) {
-        ESP_LOGD(TAG, "Notification registration successful, sending device info request");
+        ESP_LOGI(TAG, "Notification registration successful, beginning pairing handshake...");
         this->start_pairing_();
       } else {
-        ESP_LOGW(TAG, "Notification registration failed: %d", param->reg_for_notify.status);
+        ESP_LOGE(TAG, "Notification registration failed: %d", param->reg_for_notify.status);
       }
       break;
     }
@@ -344,7 +395,7 @@ void TuyaBLEDevice::gattc_event_handler(esp_gattc_cb_event_t event,
 
 void TuyaBLEDevice::start_pairing_() {
   // Step 1: Send DEVICE_INFO request (empty payload)
-  ESP_LOGD(TAG, "Sending DEVICE_INFO request");
+  ESP_LOGI(TAG, "Step 1/3: Sending DEVICE_INFO request to device...");
   std::vector<uint8_t> empty;
   this->send_command_(FUN_SENDER_DEVICE_INFO, empty);
 }
@@ -494,11 +545,11 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
   switch (code) {
     case FUN_SENDER_DEVICE_INFO: {
       if (len < 46) {
-        ESP_LOGW(TAG, "DEVICE_INFO response too short: %u", len);
+        ESP_LOGE(TAG, "DEVICE_INFO response too short (%u bytes, need 46) - is local_key correct?", len);
         return;
       }
 
-      ESP_LOGI(TAG, "Device version: %d.%d, protocol: %d.%d, hardware: %d.%d",
+      ESP_LOGI(TAG, "Step 2/3: DEVICE_INFO received - device v%d.%d, protocol v%d.%d, hardware v%d.%d",
                data[0], data[1], data[2], data[3], data[12], data[13]);
 
       this->protocol_version_ = data[2];
@@ -508,6 +559,7 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
       memcpy(key_material, this->local_key_, 6);
       memcpy(key_material + 6, &data[6], 6);  // srand
       this->compute_md5_(key_material, 12, this->session_key_);
+      ESP_LOGD(TAG, "Session key derived from local_key + device srand");
 
       // Store auth key
       memcpy(this->auth_key_, &data[14], 32);
@@ -516,7 +568,8 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
 
       // Now send pairing request
       if (!this->pair_request_sent_) {
-        ESP_LOGD(TAG, "Sending PAIR request");
+        ESP_LOGI(TAG, "Step 3/3: Sending PAIR request (uuid=%s, device_id=%s)...",
+                 this->uuid_.c_str(), this->device_id_.c_str());
         auto pair_data = this->build_pairing_request_();
         this->send_command_(FUN_SENDER_PAIR, pair_data);
         this->pair_request_sent_ = true;
@@ -525,27 +578,47 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
     }
     case FUN_SENDER_PAIR: {
       if (len < 1) {
-        ESP_LOGW(TAG, "PAIR response too short");
+        ESP_LOGE(TAG, "PAIR response too short - device rejected pairing");
         return;
       }
       uint8_t result = data[0];
       if (result == 2) {
-        ESP_LOGD(TAG, "Device already paired");
+        ESP_LOGI(TAG, "Device reports already paired, treating as success");
         result = 0;
       }
-      this->is_paired_ = (result == 0);
+      bool paired = (result == 0);
+      this->set_paired_(paired);
       if (this->is_paired_) {
-        ESP_LOGI(TAG, "Successfully paired with device");
+        this->pairing_start_time_ = 0;  // Clear timeout
+        this->pairing_fail_count_ = 0;
+        ESP_LOGI(TAG, "Successfully paired with device! Connection is now fully established.");
         // Request initial device status to populate all datapoints
-        ESP_LOGD(TAG, "Requesting initial device status");
+        ESP_LOGI(TAG, "Requesting initial device status...");
         std::vector<uint8_t> empty;
         this->send_command_(FUN_SENDER_DEVICE_STATUS, empty);
       } else {
-        ESP_LOGW(TAG, "Pairing failed with result: %d", result);
+        ESP_LOGE(TAG, "Pairing FAILED with result code: %d", data[0]);
+        ESP_LOGE(TAG, "  Check that uuid, device_id, and local_key are correct");
+        ESP_LOGE(TAG, "  uuid=%s, device_id=%s", this->uuid_.c_str(), this->device_id_.c_str());
       }
       break;
     }
+    case FUN_SENDER_DPS: {
+      // Response/ack to our DPS command — just a result byte, not DP data.
+      // Python doesn't explicitly handle this (falls through to response future resolution).
+      uint8_t result = (len >= 1) ? data[0] : 0xFF;
+      ESP_LOGD(TAG, "FUN_SENDER_DPS ack, result=%u", result);
+      break;
+    }
+    case FUN_SENDER_DEVICE_STATUS: {
+      // Response to DEVICE_STATUS request — just a 1-byte result code.
+      // The actual DP data arrives asynchronously via FUN_RECEIVE_DP/SIGN_DP notifications.
+      uint8_t result = (len >= 1) ? data[0] : 0xFF;
+      ESP_LOGD(TAG, "DEVICE_STATUS ack, result=%u", result);
+      break;
+    }
     case FUN_RECEIVE_DP: {
+      ESP_LOGD(TAG, "FUN_RECEIVE_DP: %u bytes of DP data", len);
       this->parse_datapoints_v3_(data, len, 0);
       std::vector<uint8_t> empty;
       this->send_response_(code, empty, seq_num);
@@ -553,14 +626,17 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
     }
     case FUN_RECEIVE_SIGN_DP: {
       if (len < 3) return;
-      // uint16_t dp_seq_num = ((uint16_t)data[0] << 8) | data[1];
-      // uint8_t flags = data[2];
-      this->parse_datapoints_v3_(data, len, 3);
-      // Send response with dp_seq_num, flags, result
+      // Format: dp_seq_num(2B) + DP_data
+      // Python reference starts parsing at offset 2 (matching _parse_datapoints_v3(... data, 2))
+      uint16_t dp_seq_num = ((uint16_t) data[0] << 8) | data[1];
+      uint8_t flags = data[2];  // First byte of DP data (used in response, per Python reference)
+      ESP_LOGD(TAG, "FUN_RECEIVE_SIGN_DP: dp_seq=%u, %u bytes", dp_seq_num, len);
+      this->parse_datapoints_v3_(data, len, 2);
+      // Send response: dp_seq_num(2B) + flags(1B) + result(1B)
       std::vector<uint8_t> resp(4);
-      resp[0] = data[0];
-      resp[1] = data[1];
-      resp[2] = data[2];
+      resp[0] = (dp_seq_num >> 8) & 0xFF;
+      resp[1] = dp_seq_num & 0xFF;
+      resp[2] = flags;
       resp[3] = 0;  // result = success
       this->send_response_(code, resp, seq_num);
       break;
@@ -601,18 +677,20 @@ void TuyaBLEDevice::handle_command_or_response_(uint32_t seq_num, uint32_t respo
 }
 
 void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t start_pos) {
+  ESP_LOGD(TAG, "Parsing DPs: total_len=%u start_pos=%u", len, start_pos);
   size_t pos = start_pos;
   while (len - pos >= 4) {
-    uint8_t dp_id = data[pos++];
-    uint8_t dp_type_raw = data[pos++];
-    uint8_t dp_len = data[pos++];
+    uint8_t dp_id = data[pos];
+    uint8_t dp_type_raw = data[pos + 1];
+    uint8_t dp_len = data[pos + 2];
+    pos += 3;
 
     if (dp_type_raw > DT_BITMAP) {
-      ESP_LOGW(TAG, "Invalid DP type: %d", dp_type_raw);
+      ESP_LOGW(TAG, "Invalid DP type: %d at offset %u (dp_id=%u)", dp_type_raw, pos - 2, dp_id);
       return;
     }
     if (pos + dp_len > len) {
-      ESP_LOGW(TAG, "DP data exceeds buffer");
+      ESP_LOGW(TAG, "DP data exceeds buffer: pos=%u dp_len=%u total=%u", pos, dp_len, len);
       return;
     }
 
@@ -620,6 +698,8 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
     TuyaBLEDatapoint dp;
     dp.id = dp_id;
     dp.type = dp_type;
+    dp.value_bool = false;
+    dp.value_int = 0;
 
     switch (dp_type) {
       case DT_BOOL:
@@ -627,28 +707,28 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
         dp.value_int = dp.value_bool ? 1 : 0;
         break;
       case DT_VALUE: {
-        // Build unsigned value from big-endian bytes, then sign-extend
-        uint32_t uval = 0;
-        for (size_t i = 0; i < dp_len && i < 4; i++) {
-          uval = (uval << 8) | data[pos + i];
-        }
-        // Sign extend based on actual byte width
-        if (dp_len > 0 && dp_len < 4 && (data[pos] & 0x80)) {
-          // Fill upper bits with 1s for sign extension
-          uint32_t mask = 0xFFFFFFFF << (dp_len * 8);
-          uval |= mask;
+        // Right-align into 4-byte buffer, then read as big-endian int32
+        uint8_t vbuf[4] = {0, 0, 0, 0};
+        size_t n = (dp_len < 4) ? dp_len : 4;
+        memcpy(vbuf + (4 - n), &data[pos], n);
+        uint32_t uval = ((uint32_t) vbuf[0] << 24) | ((uint32_t) vbuf[1] << 16) |
+                        ((uint32_t) vbuf[2] << 8) | vbuf[3];
+        // Sign extend for shorter-than-4-byte values (matches Python signed=True)
+        if (n > 0 && n < 4 && (vbuf[4 - n] & 0x80)) {
+          uval |= (0xFFFFFFFF << (n * 8));
         }
         dp.value_int = static_cast<int32_t>(uval);
         dp.value_bool = (dp.value_int != 0);
         break;
       }
       case DT_ENUM: {
-        int32_t val = 0;
-        for (size_t i = 0; i < dp_len && i < 4; i++) {
-          val = (val << 8) | data[pos + i];
-        }
-        dp.value_int = val;
-        dp.value_bool = (val != 0);
+        uint8_t vbuf[4] = {0, 0, 0, 0};
+        size_t n = (dp_len < 4) ? dp_len : 4;
+        memcpy(vbuf + (4 - n), &data[pos], n);
+        uint32_t uval = ((uint32_t) vbuf[0] << 24) | ((uint32_t) vbuf[1] << 16) |
+                        ((uint32_t) vbuf[2] << 8) | vbuf[3];
+        dp.value_int = static_cast<int32_t>(uval);
+        dp.value_bool = (dp.value_int != 0);
         break;
       }
       case DT_STRING:
@@ -660,7 +740,22 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
         break;
     }
 
-    ESP_LOGD(TAG, "DP update: id=%u type=%u value_int=%d", dp_id, dp_type_raw, dp.value_int);
+    // Log raw bytes for debugging
+    {
+      static const char *const TYPE_NAMES[] = {"RAW", "BOOL", "VALUE", "STRING", "ENUM", "BITMAP"};
+      const char *type_name = (dp_type_raw <= DT_BITMAP) ? TYPE_NAMES[dp_type_raw] : "?";
+      if (dp_len <= 8) {
+        char hex[24];
+        for (size_t i = 0; i < dp_len && i < 8; i++)
+          snprintf(hex + i * 3, 4, "%02X ", data[pos + i]);
+        if (dp_len > 0) hex[dp_len * 3 - 1] = '\0'; else hex[0] = '\0';
+        ESP_LOGD(TAG, "DP update: id=%u type=%s(%u) len=%u raw=[%s] value_int=%d",
+                 dp_id, type_name, dp_type_raw, dp_len, hex, dp.value_int);
+      } else {
+        ESP_LOGD(TAG, "DP update: id=%u type=%s(%u) len=%u value_int=%d",
+                 dp_id, type_name, dp_type_raw, dp_len, dp.value_int);
+      }
+    }
 
     // Notify listeners
     auto range = this->dp_listeners_.equal_range(dp_id);
@@ -761,6 +856,25 @@ void TuyaBLEDevice::register_listener(uint8_t dp_id, const DPListener &listener)
   this->dp_listeners_.insert({dp_id, listener});
 }
 
+void TuyaBLEDevice::register_connection_listener(const ConnectionStateListener &listener) {
+  this->connection_listeners_.push_back(listener);
+}
+
+void TuyaBLEDevice::set_paired_(bool paired) {
+  bool changed = (this->is_paired_ != paired);
+  this->is_paired_ = paired;
+  if (changed) {
+    ESP_LOGI(TAG, "Connection state changed: paired=%s", paired ? "true" : "false");
+    this->fire_connection_listeners_(paired);
+  }
+}
+
+void TuyaBLEDevice::fire_connection_listeners_(bool connected) {
+  for (const auto &listener : this->connection_listeners_) {
+    listener(connected);
+  }
+}
+
 std::vector<uint8_t> TuyaBLEDevice::encode_dp_value_(const TuyaBLEDatapoint &dp) {
   std::vector<uint8_t> result;
   switch (dp.type) {
@@ -799,7 +913,11 @@ std::vector<uint8_t> TuyaBLEDevice::encode_dp_value_(const TuyaBLEDatapoint &dp)
 
 void TuyaBLEDevice::send_datapoint(const TuyaBLEDatapoint &dp) {
   if (!this->is_paired_) {
-    ESP_LOGW(TAG, "Cannot send DP, not paired");
+    ESP_LOGW(TAG, "Cannot send DP %u: device not paired (ble_connected=%s, device_info=%s, pair_sent=%s)",
+             dp.id,
+             this->ble_connected_ ? "true" : "false",
+             this->device_info_received_ ? "true" : "false",
+             this->pair_request_sent_ ? "true" : "false");
     return;
   }
 
