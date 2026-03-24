@@ -19,7 +19,7 @@ static const uint8_t GATT_MTU = 20;
 
 // GATT characteristics — using esp32_ble::ESPBTUUID
 static const esp32_ble::ESPBTUUID SERVICE_UUID =
-    esp32_ble::ESPBTUUID::from_raw("0000a201-0000-1000-8000-00805f9b34fb");
+    esp32_ble::ESPBTUUID::from_raw("00001910-0000-1000-8000-00805f9b34fb");
 static const esp32_ble::ESPBTUUID CHAR_NOTIFY =
     esp32_ble::ESPBTUUID::from_raw("00002b10-0000-1000-8000-00805f9b34fb");
 static const esp32_ble::ESPBTUUID CHAR_WRITE =
