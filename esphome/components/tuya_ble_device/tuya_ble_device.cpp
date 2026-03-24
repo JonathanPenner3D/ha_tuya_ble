@@ -738,15 +738,20 @@ void TuyaBLEDevice::parse_datapoints_v3_(const uint8_t *data, size_t len, size_t
     }
 
     // Log raw bytes for debugging
-    if (dp_len <= 8) {
-      char hex[24];
-      for (size_t i = 0; i < dp_len && i < 8; i++)
-        snprintf(hex + i * 3, 4, "%02X ", data[pos + i]);
-      if (dp_len > 0) hex[dp_len * 3 - 1] = '\0'; else hex[0] = '\0';
-      ESP_LOGD(TAG, "DP update: id=%u type=%u len=%u raw=[%s] value_int=%d",
-               dp_id, dp_type_raw, dp_len, hex, dp.value_int);
-    } else {
-      ESP_LOGD(TAG, "DP update: id=%u type=%u len=%u value_int=%d", dp_id, dp_type_raw, dp_len, dp.value_int);
+    {
+      static const char *const TYPE_NAMES[] = {"RAW", "BOOL", "VALUE", "STRING", "ENUM", "BITMAP"};
+      const char *type_name = (dp_type_raw <= DT_BITMAP) ? TYPE_NAMES[dp_type_raw] : "?";
+      if (dp_len <= 8) {
+        char hex[24];
+        for (size_t i = 0; i < dp_len && i < 8; i++)
+          snprintf(hex + i * 3, 4, "%02X ", data[pos + i]);
+        if (dp_len > 0) hex[dp_len * 3 - 1] = '\0'; else hex[0] = '\0';
+        ESP_LOGD(TAG, "DP update: id=%u type=%s(%u) len=%u raw=[%s] value_int=%d",
+                 dp_id, type_name, dp_type_raw, dp_len, hex, dp.value_int);
+      } else {
+        ESP_LOGD(TAG, "DP update: id=%u type=%s(%u) len=%u value_int=%d",
+                 dp_id, type_name, dp_type_raw, dp_len, dp.value_int);
+      }
     }
 
     // Notify listeners

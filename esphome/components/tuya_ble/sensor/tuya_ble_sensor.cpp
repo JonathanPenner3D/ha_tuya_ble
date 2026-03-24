@@ -29,6 +29,23 @@ void TuyaBLESensor::on_dp_update_(const tuya_ble_device::TuyaBLEDatapoint &dp) {
     case tuya_ble_device::DT_ENUM:
       value = static_cast<float>(dp.value_int) / this->coefficient_;
       break;
+    case tuya_ble_device::DT_RAW:
+    case tuya_ble_device::DT_BITMAP: {
+      // Interpret raw bytes as big-endian unsigned integer (common for battery, etc.)
+      if (dp.value_raw.empty()) {
+        ESP_LOGW(TAG, "DP %u: RAW/BITMAP type with empty data", dp.id);
+        return;
+      }
+      uint32_t uval = 0;
+      for (size_t i = 0; i < dp.value_raw.size() && i < 4; i++) {
+        uval = (uval << 8) | dp.value_raw[i];
+      }
+      value = static_cast<float>(uval) / this->coefficient_;
+      ESP_LOGD(TAG, "DP %u: RAW/BITMAP %u bytes → uint=%u → publishing %.2f",
+               dp.id, dp.value_raw.size(), uval, value);
+      this->publish_state(value);
+      return;
+    }
     default:
       ESP_LOGW(TAG, "DP %u: unsupported type %d for sensor", dp.id, dp.type);
       return;
